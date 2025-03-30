@@ -1,11 +1,11 @@
-# MongoDB Backup Tool 🗄️
+# Mongo Collection Cherry Picker 🍒
 
-A powerful tool for automated MongoDB database backup and restoration operations.
+A tool for picking collections from a MongoDB database and saving them to a new database.
 
 ## ✨ Features
 
-- 💾 Create MongoDB database backups
-- 🔄 Restore databases from backup files 
+- 💾 Create MongoDB database backups interactively
+- 🔄 Restore databases from backup files interactively
 - 🔌 Support for multiple database connections
 - 📝 Customizable backup filename format
 - 🗜️ Automatic GZ compression of backups
