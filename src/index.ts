@@ -206,7 +206,7 @@ async function backupDatabase() {
     
     if (restore) {
       const backupMetadata = backupService.loadBackupMetadata(backupPath);
-      // Используем PromptService для выбора цели восстановления
+      
       const { target } = await promptService.promptForRestoreTarget(backupMetadata, source);
       const restoreService = new RestoreService(config);
       
@@ -461,7 +461,6 @@ async function useRestorePreset(preset: RestorePreset) {
     `--db=${target.database}`,
     `--gzip`,
     `--archive=${path.join(config.backupDir, backupFile)}`,
-    `--objcheck`,
     `--drop`
   ];
   

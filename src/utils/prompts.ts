@@ -128,14 +128,16 @@ export class PromptService {
     });
 
     // Select backup file
-    const { backupIndex } = await inquirer.prompt({
+    const { backupFile } = await inquirer.prompt({
       type: 'list',
-      name: 'backupIndex',
+      name: 'backupFile',
       message: 'Select backup to restore:',
       choices: filteredFiles
     });
 
-    const selectedBackupFile = backupFiles[backupIndex];
+    // use selected file directly, do not search for it in the array by index
+    const selectedBackupFile = backupFile;
+    
     const selectedBackup = backupService.loadBackupMetadata(selectedBackupFile);
 
     // Select target database
@@ -374,7 +376,6 @@ export class PromptService {
       `--db=${target.database}`,
       `--gzip`,
       `--archive=./backups/example_backup.gz`,
-      `--objcheck`,
       `--drop`
     ];
     

@@ -11,19 +11,24 @@ A powerful tool for automated MongoDB database backup and restoration operations
 - 🗜️ Automatic GZ compression of backups
 - ⚙️ Flexible JSON configuration
 
+## ⚙️ Configuration
 
-## 🛠️ Usage
+Create a `config.json` file in your project root:
 
-1. Create a configuration file `config.json` based on the provided `config.container.json` template.
-2. Run the backup script:
-   ```bash
-   npm run start
-   ```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests.
+```json
+{
+  "backupDir": "backups",
+  "filenameFormat": "backup_{{datetime}}_{{source}}.gz",
+  "mongodumpPath": "mongodump",
+  "mongorestorePath": "mongorestore",
+  "connections": [
+    {
+      "name": "Local MongoDB",
+      "uri": "mongodb://localhost:27017/",
+      "database": "mydb",
+      "host": "localhost",
+      "port": 27017
+    }
+  ]
+}
+```
