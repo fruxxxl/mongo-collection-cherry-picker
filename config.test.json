@@ -1,0 +1,38 @@
+{
+    "backupDir": "./backups",
+    "filenameFormat": "backup_{{date}}_{{source}}.gz",
+    "mongodumpPath": "mongodump",
+    "mongorestorePath": "mongorestore",
+    "connections": [
+        {
+            "name": "Test MongoDB",
+            "uri": "mongodb://mongoadmin:secret@localhost:27999/",
+            "database": "testdb",
+            "host": "localhost",
+            "port": 27999,
+            "username": "mongoadmin",
+            "password": "secret",
+            "authenticationDatabase": "admin"
+        },
+        {
+            "name": "Test Prod DB",
+            "uri": "mongodb://mongoadmin:secret@localhost:27999/",
+            "database": "proddb",
+            "host": "localhost",
+            "port": 27999,
+            "username": "mongoadmin",
+            "password": "secret",
+            "authenticationDatabase": "admin"
+        },
+        {
+            "name": "Test Restore DB",
+            "uri": "mongodb://mongoadmin:secret@localhost:27999/",
+            "database": "restoredb",
+            "host": "localhost",
+            "port": 27999,
+            "username": "mongoadmin",
+            "password": "secret",
+            "authenticationDatabase": "admin"
+        }
+    ]
+}

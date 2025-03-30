@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # MongoDB server
+  mongodb:
+    image: mongo:4.4
+    container_name: test-mongodb
+    ports:
+      - "27999:27017"
+    volumes:
+      - test_mongodb_data:/data/db
+      - ./test/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - mongo-network
+
+  # Container with MongoDB tools for testing
+  mongo-tools:
+    image: node:16-alpine
+    container_name: mongo-tools
+    depends_on:
+      - mongodb
+    volumes:
+      - ./backups:/backups
+      - ./test:/test
+      - ./:/app
+    command: >
+      sh -c "
+        echo 'Installing MongoDB tools...' &&
+        apk add --no-cache mongodb-tools &&
+        cd /app && npm install && npm run build &&
+        tail -f /dev/null
+      "
+    networks:
+      - mongo-network
+
+networks:
+  mongo-network:
+    driver: bridge
+
+volumes:
+  test_mongodb_data: 

@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+*.gz
+config.json*
+*.log
+.prettierrc
+
+# Test files
+test/auto_backup.exp
+test/auto_restore.exp
+config.container.json
+backups/
