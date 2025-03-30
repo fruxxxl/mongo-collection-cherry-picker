@@ -11,13 +11,17 @@ export interface SSHConfig {
 
 export interface ConnectionConfig {
   name: string;
-  uri: string;
+  uri?: string;
   database: string;
   host?: string;
   port?: number;
   username?: string;
   password?: string;
   authenticationDatabase?: string;
+  authDatabase?: string;
+  hosts?: Array<{ host: string; port?: number }>;
+  replicaSet?: string;
+  options?: Record<string, any>;
   ssh?: SSHConfig;
 }
 
@@ -55,4 +59,4 @@ export interface BackupMetadata {
   timestamp: number;
   date: string;
   archivePath: string;
-} 
+}
