@@ -40,7 +40,7 @@ jobs:
           ./test/run-tests.sh
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         if: always()
         with:
           name: test-logs
