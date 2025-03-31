@@ -18,8 +18,17 @@ echo "=========================="
 
 echo -e "${YELLOW}Setting up test environment...${NC}"
 
+# Функция для запуска docker-compose, поддерживая обе версии команды
+docker_compose() {
+  if command -v docker-compose &> /dev/null; then
+    docker-compose "$@"
+  else
+    docker compose "$@"
+  fi
+}
+
 # Start Docker Compose
-docker-compose -f test/docker-compose.test.yml up -d
+docker_compose -f test/docker-compose.test.yml up -d
 
 # Waiting for MongoDB to be ready
 echo -e "${YELLOW}Waiting for MongoDB to be ready...${NC}"
@@ -38,7 +47,7 @@ if ! docker ps | grep -q mongo-tools; then
   echo -e "${YELLOW}Checking container logs...${NC}"
   docker logs mongo-tools
   echo -e "${YELLOW}Trying to restart container...${NC}"
-  docker-compose -f test/docker-compose.test.yml up -d mongo-tools
+  docker_compose -f test/docker-compose.test.yml up -d mongo-tools
   sleep 10
   
   if ! docker ps | grep -q mongo-tools; then
@@ -288,7 +297,7 @@ read -r
 
 # Stop Docker Compose
 echo -e "${YELLOW}Stopping test environment...${NC}"
-docker-compose -f test/docker-compose.test.yml down -v
+docker_compose -f test/docker-compose.test.yml down -v
 
 # Delete temporary configuration
 rm -f test/config.container.json
