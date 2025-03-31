@@ -3,6 +3,9 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../types';
 
+import { MongoDBService } from './mongodb.service';
+import { execPromise } from '../utils/execPromise';
+
 export class BackupService {
   private config: AppConfig;
 
@@ -48,7 +51,6 @@ export class BackupService {
       // Authentication
       if (source.username) {
         args.push(`--username=${source.username}`);
-        console.log('username', source.username);
       }
 
       if (source.password) {
@@ -248,181 +250,137 @@ export class BackupService {
   async restoreBackup(
     target: ConnectionConfig,
     archivePath: string,
-    options: RestoreOptions
+    options: RestoreOptions = {}
   ): Promise<boolean> {
     try {
+      // Проверяем существование архива
       console.log(`Full path to backup directory: ${path.resolve(this.config.backupDir)}`);
+      console.log('Searching for archive file. Checking paths:');
+      console.log(`- ${archivePath} (${fs.existsSync(archivePath) ? 'exists' : 'not found'})`);
 
-      // Use new method to find archive file
-      const fullPath = this.findArchiveFile(archivePath);
-      if (!fullPath) {
-        throw new Error(`Archive file not found: ${archivePath}`);
-      }
-      console.log(`Using full path: ${fullPath}`);
-
-      // Read file into memory
-      const archiveData = fs.readFileSync(fullPath);
-      console.log(`Archive size: ${archiveData.length} bytes`);
-
-      // get source database name from metadata
-      const metadata = this.loadBackupMetadata(archivePath);
-      const sourceDatabase = metadata.database;
-
-      // Prepare arguments for mongorestore
-      const args: string[] = [];
-
-      // URI or host/port
-      if (target.uri && !target.uri.includes('mongodb+srv')) {
-        const url = new URL(target.uri);
-        args.push(`--host=${url.hostname}:${url.port || 27017}`);
-      } else if (target.host) {
-        args.push(`--host=${target.host}${target.port ? `:${target.port}` : ''}`);
+      if (!fs.existsSync(archivePath)) {
+        throw new Error(`Backup archive not found: ${archivePath}`);
       }
 
-      // Authentication
-      if (target.username) {
-        args.push(`--username=${target.username}`);
-      }
-      if (target.password) {
-        args.push(`--password=${target.password}`);
-      }
-      if (target.authenticationDatabase) {
-        args.push(`--authenticationDatabase=${target.authenticationDatabase}`);
+      // Выводим размер архива
+      const stats = fs.statSync(archivePath);
+      console.log(`Archive size: ${stats.size} bytes`);
+
+      // Формируем команду для восстановления с классическими параметрами
+      const sourceDb = this.getSourceDatabaseFromMetadata(archivePath);
+
+      // Базовая команда
+      const restoreCommand = [
+        this.config.mongorestorePath || 'mongorestore',
+        `--host=${target.host || 'localhost'}:${target.port || 27017}`,
+        `--gzip`,
+        `--archive=${archivePath}`
+      ];
+
+      // Если исходная и целевая БД разные, добавляем параметры трансформации
+      if (sourceDb && sourceDb !== target.database) {
+        // Используем только один раз параметры nsFrom и nsTo
+        restoreCommand.push(`--nsFrom=${sourceDb}.*`, `--nsTo=${target.database}.*`);
+      } else {
+        // Если БД одинаковые или нет информации об исходной, просто указываем целевую БД
+        restoreCommand.push(`--db=${target.database}`);
       }
 
-      args.push(`--nsFrom=${sourceDatabase}.*`);
-      args.push(`--nsTo=${target.database}.*`);
-
-      // Additional arguments for mongorestore
-      args.push('--gzip');
-      args.push('--archive');
-
+      // Добавляем опцию --drop, если указано
       if (options.drop) {
-        args.push('--drop');
+        restoreCommand.push('--drop');
       }
 
-      // Output command for debugging
-      const commandString = `cat ${fullPath} | ${this.config.mongorestorePath || 'mongorestore'} ${args.join(' ')}`;
-      console.log(`EXECUTING COMMAND: ${commandString}`);
+      // Добавляем аутентификацию если указана
+      if (target.username && target.password) {
+        restoreCommand.push(`--username=${target.username}`, `--password=${target.password}`);
 
-      // create file stream
-      const fileStream = fs.createReadStream(fullPath);
-
-      // run mongorestore
-      const mongorestoreProcess = spawn(this.config.mongorestorePath || 'mongorestore', args);
-
-      // add stdout logging
-      mongorestoreProcess.stdout.on('data', (data) => {
-        console.log(`[mongorestore]: ${data.toString()}`);
-      });
-
-      let checkErrorOutput = '';
-      mongorestoreProcess.stderr.on('data', (data) => {
-        const message = data.toString();
-        // expand list of informational messages
-        if (
-          message.includes('restoring') ||
-          message.includes('done') ||
-          message.includes('index:') ||
-          message.includes('no indexes to restore')
-        ) {
-          console.log(`[mongorestore info]: ${message}`);
-        } else {
-          // real errors are added to errorOutput
-          console.log(`[mongorestore error]: ${message}`);
-          checkErrorOutput += message;
+        if (target.authSource || target.authenticationDatabase) {
+          restoreCommand.push(
+            `--authenticationDatabase=${target.authSource || target.authenticationDatabase}`
+          );
         }
-      });
-
-      // handle stdin errors
-      mongorestoreProcess.stdin.on('error', (error) => {
-        console.error(`stdin error: ${error}`);
-      });
-
-      // handle file stream errors
-      fileStream.on('error', (error) => {
-        console.error(`fileStream error: ${error}`);
-      });
-
-      fileStream.pipe(mongorestoreProcess.stdin).on('error', (error) => {
-        console.error(`pipe error: ${error}`);
-      });
-
-      // check restored collections
-      const checkRestoredCollections = async (dbName: string, host: string, port: string) => {
-        try {
-          const checkProcess = spawn('mongosh', [
-            `--host=${host}`,
-            `--port=${port}`,
-            `--quiet`,
-            dbName,
-            '--eval',
-            'JSON.stringify(db.getCollectionNames())'
-          ]);
-
-          let checkOutput = '';
-          checkProcess.stdout.on('data', (data) => {
-            checkOutput += data.toString();
-          });
-
-          let checkErrorOutput = '';
-          checkProcess.stderr.on('data', (data) => {
-            checkErrorOutput += data.toString();
-          });
-
-          const checkExitCode = await new Promise<number>((resolve) => {
-            checkProcess.on('close', resolve);
-          });
-
-          // explicitly close process and its streams
-          checkProcess.stdout.destroy();
-          checkProcess.stderr.destroy();
-          checkProcess.kill();
-
-          if (checkExitCode !== 0) {
-            console.log(`Note: Failed to check collections: ${checkErrorOutput}`);
-            return null;
-          }
-
-          try {
-            const collections = JSON.parse(checkOutput.trim());
-            console.log(`Found ${collections.length} collections in the database ${dbName}`);
-            return checkOutput;
-          } catch (e) {
-            console.log(`Error parsing collection list: ${e}`);
-            return null;
-          }
-        } catch (error) {
-          console.log('Note: Failed to check collections. Ensure mongosh is installed.');
-          return null;
-        }
-      };
-
-      // wait for process completion
-      const exitCode = await new Promise<number>((resolve, reject) => {
-        mongorestoreProcess.on('close', resolve);
-        mongorestoreProcess.on('error', reject);
-      });
-
-      if (exitCode !== 0) {
-        throw new Error(`mongorestore finished with an error: ${checkErrorOutput}`);
       }
 
-      // explicitly close streams
-      fileStream.destroy();
-      mongorestoreProcess.stdin.end();
-      mongorestoreProcess.stdout.destroy();
-      mongorestoreProcess.stderr.destroy();
+      console.log(`EXECUTING COMMAND: ${restoreCommand.join(' ')}`);
 
-      // check restored collections
-      const host = target.host || '127.0.0.1';
-      const port = (target.port || 27017).toString();
+      // Выполняем команду
+      const { stdout, stderr } = await execPromise(restoreCommand.join(' '));
+
+      // Фильтруем и отображаем сообщения из stderr
+      if (stderr) {
+        // Разделяем по строкам
+        const errorLines = stderr.split('\n').filter((line) => line.trim());
+
+        // Проверяем каждую строку на наличие реальной ошибки
+        const realErrors = errorLines.filter(
+          (line) =>
+            line.includes('error:') ||
+            line.includes('failed') ||
+            line.includes('exception') ||
+            line.includes('Error:')
+        );
+
+        // Если есть реальные ошибки, выводим их как ошибки
+        if (realErrors.length > 0) {
+          console.error('[mongorestore errors]:', realErrors.join('\n'));
+        }
+
+        // Остальные строки выводим как информационные сообщения
+        const infoLines = errorLines.filter((line) => !realErrors.includes(line));
+        if (infoLines.length > 0) {
+          console.log('[mongorestore info]:', infoLines.join('\n'));
+        }
+      }
+
+      // Выводим информацию из stdout, если есть
+      if (stdout) {
+        console.log('[mongorestore output]:', stdout);
+      }
+
+      // Проверяем результат восстановления
       console.log(`Checking restoration results in ${target.database}...`);
-      await checkRestoredCollections(target.database, host, port);
+      await this.checkRestoreResults(target);
 
       return true;
     } catch (error) {
-      throw error;
+      console.error(
+        `Error restoring backup: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return false;
+    }
+  }
+
+  // Вспомогательный метод для получения имени исходной БД из метаданных
+  private getSourceDatabaseFromMetadata(archivePath: string): string | null {
+    try {
+      const metadataPath = archivePath + '.json';
+      if (fs.existsSync(metadataPath)) {
+        const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        return metadata.database;
+      }
+    } catch (error) {
+      console.error('Error reading metadata:', error);
+    }
+    return null;
+  }
+
+  // Вспомогательный метод для проверки результатов восстановления
+  private async checkRestoreResults(target: ConnectionConfig): Promise<void> {
+    try {
+      const mongoService = new MongoDBService(this.config);
+      await mongoService.connect(target);
+
+      const collections = await mongoService.getCollections(target.database);
+      console.log(`Found ${collections.length} collections in the database ${target.database}`);
+
+      if (collections.length > 0) {
+        console.log(`Collections: ${collections.join(', ')}`);
+      }
+
+      await mongoService.close();
+    } catch (error) {
+      console.error('Error checking restore results:', error);
     }
   }
 }

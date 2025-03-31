@@ -55,7 +55,6 @@ export interface AppConfig {
   mongorestorePath: string;
   connections: ConnectionConfig[];
   backupPresets?: BackupPreset[];
-  restorePresets?: RestorePreset[];
 }
 
 export interface BackupMetadata {
@@ -83,6 +82,5 @@ export interface ConfigType {
   connections: ConnectionConfig[];
   backupDir: string;
   backupPresets?: BackupPreset[];
-  restorePresets?: RestorePreset[];
   [key: string]: any;
 }

@@ -32,20 +32,11 @@ export const BackupPresetSchema = z.object({
   createdAt: z.string()
 });
 
-export const RestorePresetSchema = z.object({
-  name: z.string(),
-  targetName: z.string(),
-  description: z.string().optional(),
-  backupPattern: z.string().optional(),
-  createdAt: z.string()
-});
-
 export const AppConfigSchema = z.object({
   backupDir: z.string().default('./backups'),
   filenameFormat: z.string().default('backup_{{timestamp}}_{{source}}.gz'),
   connections: z.array(ConnectionConfigSchema),
   mongodumpPath: z.string().optional().default('mongodump'),
   mongorestorePath: z.string().optional().default('mongorestore'),
-  backupPresets: z.array(BackupPresetSchema).optional(),
-  restorePresets: z.array(RestorePresetSchema).optional()
-}); 
+  backupPresets: z.array(BackupPresetSchema).optional()
+});

@@ -23,6 +23,8 @@ export class RestoreService {
       const archivePath = path.join(this.config.backupDir, backupMetadata.archivePath);
 
       console.log(`Restoring from file: ${archivePath}`);
+      console.log(`Collections in backup: ${JSON.stringify(backupMetadata.collections)}`);
+
       const result = await backupService.restoreBackup(target, archivePath, options);
 
       if (!result) {

@@ -3,6 +3,7 @@ import { AppConfig, ConnectionConfig, BackupMetadata, BackupPreset, RestorePrese
 import { BackupService } from '../services/backup.service';
 import { MongoDBService } from '../services/mongodb.service';
 import { savePresets } from '../utils';
+import path from 'path';
 
 export class PromptService {
   private config: AppConfig;
@@ -283,11 +284,18 @@ export class PromptService {
 
     // Preview command
     if (selectionMode !== 'all' && collections.length > 0) {
+      const dateTime = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+      const archiveFilename = this.config.filenameFormat
+        .replace('{{datetime}}', dateTime)
+        .replace('{{source}}', source.name);
+
+      const archivePath = path.join(this.config.backupDir, archiveFilename);
+
       const commandArgs = [
         `--host=${source.host || 'localhost'}:${source.port || 27017}`,
         `--db=${source.database}`,
         `--gzip`,
-        `--archive=./backups/backup_example.gz`
+        `--archive=${archivePath}`
       ];
 
       if (selectionMode === 'include') {

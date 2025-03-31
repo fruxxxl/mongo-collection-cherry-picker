@@ -5,6 +5,7 @@ import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
 import { PromptService } from '../utils/prompts';
 import { AppConfig, ConnectionConfig } from '../types/index';
+import path from 'path';
 
 export class BackupManager {
   private config: AppConfig;
@@ -155,12 +156,20 @@ export class BackupManager {
       );
     }
 
-    // Check command before execution
+    // Формируем имя файла на основе шаблона из конфигурации
+    const dateTime = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+    const archiveFilename = this.config.filenameFormat
+      .replace('{{datetime}}', dateTime)
+      .replace('{{source}}', source.name);
+
+    const archivePath = path.join(this.config.backupDir, archiveFilename);
+
+    // Возвращаем оригинальный формат команды
     const commandArgs = [
       `--host=${source.host || 'localhost'}:${source.port || 27017}`,
       `--db=${source.database}`,
       `--gzip`,
-      `--archive=./backups/backup_example.gz`
+      `--archive=${archivePath}`
     ];
 
     if (preset.selectionMode === 'exclude') {
@@ -171,6 +180,23 @@ export class BackupManager {
       selectedCollections.forEach((coll: string) => {
         commandArgs.push(`--collection=${coll}`);
       });
+    }
+
+    // Если есть URI, заменяем host/port на URI
+    if (source.uri) {
+      commandArgs.splice(0, 1, `--uri="${source.uri}"`);
+    }
+
+    // Добавляем аутентификацию
+    if (source.username && source.password) {
+      commandArgs.push(`--username=${source.username}`);
+      commandArgs.push(`--password=${source.password}`);
+
+      if (source.authSource || source.authenticationDatabase) {
+        commandArgs.push(
+          `--authenticationDatabase=${source.authSource || source.authenticationDatabase}`
+        );
+      }
     }
 
     console.log('\nExecuting mongodump command:');
@@ -188,6 +214,8 @@ export class BackupManager {
       const spinner = ora('Creating backup...').start();
       try {
         spinner.text = 'Running mongodump...';
+        // Обратите внимание, что здесь мы все еще используем createBackup
+        // который может использовать другой формат команды внутренне
         const backupPath = await this.backupService.createBackup(
           source,
           selectedCollections,

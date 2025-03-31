@@ -55,27 +55,17 @@ export class PresetManager {
 
   async managePresets(): Promise<void> {
     // Add debug output
-    console.log(
-      `DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets and ${
-        this.config.restorePresets?.length || 0
-      } restore presets`
-    );
+    console.log(`DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets`);
     if (this.config.backupPresets) {
       console.log(
         `Backup presets: ${JSON.stringify(this.config.backupPresets.map((p: any) => p.name))}`
       );
     }
-    if (this.config.restorePresets) {
-      console.log(
-        `Restore presets: ${JSON.stringify(this.config.restorePresets.map((p: any) => p.name))}`
-      );
-    }
 
     // Check for presets
     const hasBackupPresets = this.config.backupPresets && this.config.backupPresets.length > 0;
-    const hasRestorePresets = this.config.restorePresets && this.config.restorePresets.length > 0;
 
-    if (!hasBackupPresets && !hasRestorePresets) {
+    if (!hasBackupPresets) {
       console.log('No saved presets found. Please create a preset first.');
       return;
     }

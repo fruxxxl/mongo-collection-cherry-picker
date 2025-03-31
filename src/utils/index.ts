@@ -113,15 +113,11 @@ export function loadConfig(customConfigPath?: string): AppConfig {
   const configJson = JSON.parse(configData);
 
   console.log(`Configuration contains: ${Object.keys(configJson).join(', ')}`);
-  console.log(
-    `Presets: backup=${configJson.backupPresets?.length || 0}, restore=${configJson.restorePresets?.length || 0}`
-  );
+  console.log(`Presets: backup=${configJson.backupPresets?.length || 0}`);
 
   try {
     const validatedConfig = AppConfigSchema.parse(configJson);
-    console.log(
-      `After validation: backup=${validatedConfig.backupPresets?.length || 0}, restore=${validatedConfig.restorePresets?.length || 0}`
-    );
+    console.log(`After validation: backup=${validatedConfig.backupPresets?.length || 0}`);
     return validatedConfig;
   } catch (error) {
     throw new Error(
