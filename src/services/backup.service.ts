@@ -253,7 +253,7 @@ export class BackupService {
     options: RestoreOptions = {}
   ): Promise<boolean> {
     try {
-      // Проверяем существование архива
+      // Check if the archive exists
       console.log(`Full path to backup directory: ${path.resolve(this.config.backupDir)}`);
       console.log('Searching for archive file. Checking paths:');
       console.log(`- ${archivePath} (${fs.existsSync(archivePath) ? 'exists' : 'not found'})`);
@@ -262,14 +262,14 @@ export class BackupService {
         throw new Error(`Backup archive not found: ${archivePath}`);
       }
 
-      // Выводим размер архива
+      // Print archive size
       const stats = fs.statSync(archivePath);
       console.log(`Archive size: ${stats.size} bytes`);
 
-      // Формируем команду для восстановления с классическими параметрами
+      // Form the restore command with classic parameters
       const sourceDb = this.getSourceDatabaseFromMetadata(archivePath);
 
-      // Базовая команда
+      // Base command
       const restoreCommand = [
         this.config.mongorestorePath || 'mongorestore',
         `--host=${target.host || 'localhost'}:${target.port || 27017}`,
@@ -277,21 +277,21 @@ export class BackupService {
         `--archive=${archivePath}`
       ];
 
-      // Если исходная и целевая БД разные, добавляем параметры трансформации
+      // If the source and target databases are different, add transformation parameters
       if (sourceDb && sourceDb !== target.database) {
-        // Используем только один раз параметры nsFrom и nsTo
+        // Use only one time parameters nsFrom and nsTo
         restoreCommand.push(`--nsFrom=${sourceDb}.*`, `--nsTo=${target.database}.*`);
       } else {
-        // Если БД одинаковые или нет информации об исходной, просто указываем целевую БД
+        // If the databases are the same or there is no information about the source, just specify the target database
         restoreCommand.push(`--db=${target.database}`);
       }
 
-      // Добавляем опцию --drop, если указано
+      // Add the --drop option if specified
       if (options.drop) {
         restoreCommand.push('--drop');
       }
 
-      // Добавляем аутентификацию если указана
+      // Add authentication if specified
       if (target.username && target.password) {
         restoreCommand.push(`--username=${target.username}`, `--password=${target.password}`);
 
@@ -304,41 +304,55 @@ export class BackupService {
 
       console.log(`EXECUTING COMMAND: ${restoreCommand.join(' ')}`);
 
-      // Выполняем команду
+      // Execute command
       const { stdout, stderr } = await execPromise(restoreCommand.join(' '));
 
-      // Фильтруем и отображаем сообщения из stderr
+      // Filter and display messages from stderr
       if (stderr) {
-        // Разделяем по строкам
+        // Split by lines
         const errorLines = stderr.split('\n').filter((line) => line.trim());
 
-        // Проверяем каждую строку на наличие реальной ошибки
-        const realErrors = errorLines.filter(
-          (line) =>
-            line.includes('error:') ||
-            line.includes('failed') ||
-            line.includes('exception') ||
-            line.includes('Error:')
-        );
+        // Define positive messages
+        const positivePatterns = [
+          'document(s) restored successfully',
+          'finished restoring',
+          'preparing collections to restore',
+          'reading metadata',
+          'restoring',
+          'done',
+          'no indexes to restore',
+          'index:',
+          'restoring indexes'
+        ];
 
-        // Если есть реальные ошибки, выводим их как ошибки
+        const infoLines = [];
+        const realErrors = [];
+
+        for (const line of errorLines) {
+          if (positivePatterns.some((pattern) => line.includes(pattern))) {
+            infoLines.push(line);
+          } else {
+            realErrors.push(line);
+          }
+        }
+
+        // Red color
         if (realErrors.length > 0) {
           console.error('[mongorestore errors]:', realErrors.join('\n'));
         }
 
-        // Остальные строки выводим как информационные сообщения
-        const infoLines = errorLines.filter((line) => !realErrors.includes(line));
+        // Print info messages in normal color
         if (infoLines.length > 0) {
           console.log('[mongorestore info]:', infoLines.join('\n'));
         }
       }
 
-      // Выводим информацию из stdout, если есть
+      // Print stdout if it exists
       if (stdout) {
         console.log('[mongorestore output]:', stdout);
       }
 
-      // Проверяем результат восстановления
+      // Check restoration results
       console.log(`Checking restoration results in ${target.database}...`);
       await this.checkRestoreResults(target);
 
@@ -351,7 +365,7 @@ export class BackupService {
     }
   }
 
-  // Вспомогательный метод для получения имени исходной БД из метаданных
+  // Helper method to get the name of the source database from metadata
   private getSourceDatabaseFromMetadata(archivePath: string): string | null {
     try {
       const metadataPath = archivePath + '.json';
@@ -365,10 +379,10 @@ export class BackupService {
     return null;
   }
 
-  // Вспомогательный метод для проверки результатов восстановления
+  // Helper method to check restoration results
   private async checkRestoreResults(target: ConnectionConfig): Promise<void> {
+    const mongoService = new MongoDBService(this.config);
     try {
-      const mongoService = new MongoDBService(this.config);
       await mongoService.connect(target);
 
       const collections = await mongoService.getCollections(target.database);
@@ -377,10 +391,11 @@ export class BackupService {
       if (collections.length > 0) {
         console.log(`Collections: ${collections.join(', ')}`);
       }
-
-      await mongoService.close();
     } catch (error) {
       console.error('Error checking restore results:', error);
+    } finally {
+      // Guaranteed connection closure
+      await mongoService.close();
     }
   }
 }

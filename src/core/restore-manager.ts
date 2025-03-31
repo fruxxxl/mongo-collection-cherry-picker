@@ -49,14 +49,22 @@ export class RestoreManager {
   }
 
   async restoreDatabase(): Promise<void> {
-    // Use PromptService for interactive selection
-    const { backupFile, target, options } = await this.promptService.promptForRestore();
+    try {
+      // Use PromptService for interactive selection
+      const { backupFile, target, options } = await this.promptService.promptForRestore();
 
-    // Load metadata from file
-    const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
+      // Load metadata from file
+      const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Restore backup with options
-    await this.restoreService.restoreBackup(backupMetadata, target, options);
+      // Restore backup with options
+      await this.restoreService.restoreBackup(backupMetadata, target, options);
+
+      console.log('Restoration completed successfully.');
+      return;
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
   }
 
   async useRestorePreset(preset: RestorePreset): Promise<void> {

@@ -11,6 +11,7 @@ export class MongoDBApp {
   private restoreManager: RestoreManager;
   private presetManager: PresetManager;
   private args: CommandLineArgs;
+  private interactive: boolean;
 
   constructor(args: CommandLineArgs) {
     this.args = args;
@@ -20,6 +21,8 @@ export class MongoDBApp {
     this.backupManager = new BackupManager(config);
     this.restoreManager = new RestoreManager(config);
     this.presetManager = new PresetManager(config, this.backupManager, this.restoreManager);
+
+    this.interactive = args.interactive || false;
   }
 
   async run(): Promise<void> {
@@ -71,7 +74,7 @@ export class MongoDBApp {
         await this.backupManager.backupDatabase();
         break;
       case 'restore':
-        await this.restoreManager.restoreDatabase();
+        await this.restoreFromBackup();
         break;
       case 'preset_backup':
         await this.presetManager.createBackupPreset();
@@ -80,5 +83,29 @@ export class MongoDBApp {
         await this.presetManager.managePresets();
         break;
     }
+  }
+
+  private async restoreFromBackup(): Promise<void> {
+    try {
+      await this.restoreManager.restoreDatabase();
+
+      if (this.interactive) {
+        await this.showMainMenu();
+      } else {
+        setTimeout(() => process.exit(0), 500);
+      }
+    } catch (error) {
+      console.error('Error during restore:', error);
+
+      if (this.interactive) {
+        await this.showMainMenu();
+      } else {
+        setTimeout(() => process.exit(1), 500);
+      }
+    }
+  }
+
+  private async showMainMenu(): Promise<void> {
+    await this.runInteractiveMode();
   }
 }
