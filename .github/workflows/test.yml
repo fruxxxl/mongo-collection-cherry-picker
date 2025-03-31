@@ -26,10 +26,14 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Create test directories
+      - name: Prepare test environment
         run: |
           mkdir -p backups
           mkdir -p test-backups
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}" > .env
+          echo "Проект находится в: ${GITHUB_WORKSPACE}"
+          echo "Содержимое текущей директории:"
+          ls -la
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@v2
@@ -37,38 +41,42 @@ jobs:
       - name: Install Docker Compose
         run: |
           sudo apt-get update
-          sudo apt-get install -y docker-compose
+          sudo apt-get install -y docker-compose-plugin
+          docker compose version
 
-      - name: Prepare Docker environment
+      - name: Copy project files to working directory
         run: |
-          mkdir -p docker-context
-          cp package*.json docker-context/
-          cp -r src/ docker-context/
-          cp -r test/ docker-context/
-          cp tsconfig.json docker-context/
+          mkdir -p docker-workdir
+          cp -r . docker-workdir/
+          ls -la docker-workdir/
 
       - name: Run tests with Docker
         run: |
+          cd docker-workdir
           chmod +x test/run-tests.sh
+          docker compose -f test/docker-compose.test.yml up -d
+          docker ps
+          echo "Проверяем логи контейнеров:"
+          docker logs mongo-tools
+          docker logs test-mongodb
+          echo "Запускаем тесты..."
           ./test/run-tests.sh || echo "Tests failed with exit code $?"
 
-      - name: Save test logs
-        if: always()
+      - name: Verify build directory
         run: |
-          echo "=== TEST LOGS ===" >> $GITHUB_STEP_SUMMARY
-          if [ -f test/mongodb-backup-test.log ]; then
-            cat test/mongodb-backup-test.log >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No test logs found" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Simple Build Test
-        run: |
-          npm run build
-          [ -d dist ] && echo "✅ Build succeeded" || echo "❌ Build failed"
+          echo "✅ Checking project structure..."
+          [ -d dist ] && echo "✅ Build directory exists" || echo "❌ Build directory missing"
+          [ -d src ] && echo "✅ Source directory exists" || echo "❌ Source directory missing"
+          [ -f package.json ] && echo "✅ package.json exists" || echo "❌ package.json missing"
 
       - name: Test CLI interface
         run: |
-          # Проверяем, что скрипты работают
+          echo "✅ Testing CLI interface..."
           node ./dist/index.js --help
           echo "✅ CLI interface works"
+
+      - name: Check TypeScript compilation
+        run: |
+          echo "✅ Checking TypeScript compilation..."
+          tsc --noEmit
+          echo "✅ TypeScript compilation OK"
