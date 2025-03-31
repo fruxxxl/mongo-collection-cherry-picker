@@ -1,5 +1,5 @@
 {
-    "name": "mongodb-backup-tool",
+    "name": "mongo-collection-cherry-picker",
     "version": "1.0.0",
     "description": "Interactive tool for MongoDB backup and restoration",
     "main": "dist/index.js",
