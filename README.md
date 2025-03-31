@@ -21,6 +21,10 @@ MongoDB Collection Cherry Picker allows you to easily create and restore databas
 - 🗜️ Automatic GZ compression of backups
 - 🔒 Support for authentication and SSL
 
+Demo video:
+[![Watch the video](https://img.youtube.com/vi/_wcxIeL43xk/0.jpg)](https://youtu.be/_wcxIeL43xk?si=GsXqrSNrsxDtTtKi)
+
+
 ## 📥 Installation
 
 ```bash
