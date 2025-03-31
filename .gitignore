@@ -11,6 +11,7 @@ test/auto_backup.exp
 test/auto_restore.exp
 config.container.json
 backups/
+test/test-backups/
 test-backups/
 *.gz.json
 test/*.log
