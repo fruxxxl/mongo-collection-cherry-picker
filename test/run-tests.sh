@@ -18,12 +18,15 @@ echo "=========================="
 
 echo -e "${YELLOW}Setting up test environment...${NC}"
 
-# Функция для запуска docker-compose, поддерживая обе версии команды
+# Функция для запуска docker-compose или docker compose
 docker_compose() {
   if command -v docker-compose &> /dev/null; then
     docker-compose "$@"
-  else
+  elif docker compose version &> /dev/null; then
     docker compose "$@"
+  else
+    echo "Ни docker-compose, ни docker compose не найдены!"
+    exit 1
   fi
 }
 

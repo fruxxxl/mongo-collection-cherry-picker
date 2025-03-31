@@ -38,11 +38,18 @@ jobs:
       - name: Setup Docker
         uses: docker/setup-buildx-action@v2
 
-      - name: Install Docker Compose
+      - name: Verify Docker Compose version
         run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
+          # Проверяем версию Docker и Docker Compose
+          docker --version
           docker compose version
+
+          # Если docker compose не найден, установим классический docker-compose
+          if ! docker compose version &>/dev/null; then
+            echo "Устанавливаем docker-compose из репозитория..."
+            sudo apt-get update
+            sudo apt-get install -y docker-compose
+          fi
 
       - name: Copy project files to working directory
         run: |
@@ -54,11 +61,18 @@ jobs:
         run: |
           cd docker-workdir
           chmod +x test/run-tests.sh
-          docker compose -f test/docker-compose.test.yml up -d
+
+          # Используем docker compose или docker-compose, в зависимости от того, что установлено
+          if docker compose version &>/dev/null; then
+            docker compose -f test/docker-compose.test.yml up -d
+          else
+            docker-compose -f test/docker-compose.test.yml up -d
+          fi
+
           docker ps
           echo "Проверяем логи контейнеров:"
           docker logs mongo-tools
-          docker logs test-mongodb
+          docker logs test-mongodb || echo "MongoDB контейнер ещё не запущен"
           echo "Запускаем тесты..."
           ./test/run-tests.sh || echo "Tests failed with exit code $?"
 
