@@ -22,24 +22,24 @@ export class PresetManager {
     try {
       const preset = await this.promptService.promptForBackupPreset();
 
-      // Инициализируем массив пресетов, если он не существует
+      // Initialize presets array if it doesn't exist
       if (!this.config.backupPresets) {
         this.config.backupPresets = [];
       }
 
-      // Добавляем новый пресет
+      // Add new preset
       this.config.backupPresets.push(preset);
 
-      // Сохраняем конфигурацию
+      // Save configuration
       savePresets(this.config);
 
-      console.log(`Пресет резервного копирования "${preset.name}" успешно создан!`);
+      console.log(`Backup preset "${preset.name}" successfully created!`);
 
-      // Предлагаем использовать пресет немедленно
+      // Suggest to use preset immediately
       const { useNow } = await inquirer.prompt({
         type: 'confirm',
         name: 'useNow',
-        message: 'Хотите использовать этот пресет прямо сейчас?',
+        message: 'Do you want to use this preset right now?',
         default: true
       });
 
@@ -48,7 +48,7 @@ export class PresetManager {
       }
     } catch (error) {
       console.error(
-        `Ошибка создания пресета: ${error instanceof Error ? error.message : String(error)}`
+        `Error creating preset: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -57,24 +57,24 @@ export class PresetManager {
     try {
       const preset = await this.promptService.promptForRestorePreset();
 
-      // Инициализируем массив пресетов, если он не существует
+      // Initialize presets array if it doesn't exist
       if (!this.config.restorePresets) {
         this.config.restorePresets = [];
       }
 
-      // Добавляем новый пресет
+      // Add new preset
       this.config.restorePresets.push(preset);
 
-      // Сохраняем конфигурацию
+      // Save configuration
       savePresets(this.config);
 
-      console.log(`Пресет восстановления "${preset.name}" успешно создан!`);
+      console.log(`Restore preset "${preset.name}" successfully created!`);
 
-      // Предлагаем использовать пресет немедленно
+      // Suggest to use preset immediately
       const { useNow } = await inquirer.prompt({
         type: 'confirm',
         name: 'useNow',
-        message: 'Хотите использовать этот пресет прямо сейчас?',
+        message: 'Do you want to use this preset right now?',
         default: true
       });
 
@@ -83,33 +83,33 @@ export class PresetManager {
       }
     } catch (error) {
       console.error(
-        `Ошибка создания пресета: ${error instanceof Error ? error.message : String(error)}`
+        `Error creating preset: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
   async managePresets(): Promise<void> {
-    // Добавляем отладочный вывод
+    // Add debug output
     console.log(
-      `ОТЛАДКА: Конфигурация содержит ${this.config.backupPresets?.length || 0} пресетов резервного копирования и ${this.config.restorePresets?.length || 0} пресетов восстановления`
+      `DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets and ${this.config.restorePresets?.length || 0} restore presets`
     );
     if (this.config.backupPresets) {
       console.log(
-        `Пресеты резервного копирования: ${JSON.stringify(this.config.backupPresets.map((p: any) => p.name))}`
+        `Backup presets: ${JSON.stringify(this.config.backupPresets.map((p: any) => p.name))}`
       );
     }
     if (this.config.restorePresets) {
       console.log(
-        `Пресеты восстановления: ${JSON.stringify(this.config.restorePresets.map((p: any) => p.name))}`
+        `Restore presets: ${JSON.stringify(this.config.restorePresets.map((p: any) => p.name))}`
       );
     }
 
-    // Проверяем наличие пресетов
+    // Check for presets
     if (
       (!this.config.backupPresets || this.config.backupPresets.length === 0) &&
       (!this.config.restorePresets || this.config.restorePresets.length === 0)
     ) {
-      console.log('Не найдено сохраненных пресетов. Пожалуйста, сначала создайте пресет.');
+      console.log('No saved presets found. Please create a preset first.');
       return;
     }
 
@@ -117,7 +117,7 @@ export class PresetManager {
       const result = await this.promptService.managePresets();
 
       if (result) {
-        // Используем выбранный пресет
+        // Using selected preset
         if (result.type === 'backup') {
           await this.backupManager.useBackupPreset(result.preset as BackupPreset);
         } else {
@@ -126,7 +126,7 @@ export class PresetManager {
       }
     } catch (error) {
       console.error(
-        `Ошибка при управлении пресетами: ${error instanceof Error ? error.message : String(error)}`
+        `Error managing presets: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

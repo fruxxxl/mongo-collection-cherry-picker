@@ -24,23 +24,23 @@ export class BackupManager {
     mode: 'all' | 'include' | 'exclude',
     collectionsList: string[] = []
   ): Promise<string> {
-    // Находим подключение по имени
+    // Find connection by name
     const sourceConfig = this.config.connections.find(
       (conn: ConnectionConfig) => conn.name === sourceName
     );
     if (!sourceConfig) {
-      throw new Error(`Подключение "${sourceName}" не найдено в конфигурации`);
+      throw new Error(`Connection "${sourceName}" not found in configuration`);
     }
 
-    // Подключаемся к MongoDB
+    // Connect to MongoDB
     await this.mongoService.connect(sourceConfig);
-    console.log(`Подключение успешно установлено к ${sourceName}`);
+    console.log(`Connection successfully established to ${sourceName}`);
 
-    // Получаем список коллекций
+    // Get collection list
     const allCollections = await this.mongoService.getCollections(sourceConfig.database);
     await this.mongoService.close();
 
-    // Определяем коллекции для резервного копирования
+    // Define collections for backup
     let includedCollections: string[] = [];
     let excludedCollections: string[] = [];
 
@@ -55,49 +55,49 @@ export class BackupManager {
       );
     }
 
-    // Создаем резервную копию
+    // Create backup
     const backupPath = await this.backupService.createBackup(
       sourceConfig,
       includedCollections,
       excludedCollections
     );
 
-    console.log(`Резервная копия успешно создана: ${backupPath}`);
+    console.log(`Backup successfully created: ${backupPath}`);
     return backupPath;
   }
 
   async backupDatabase(): Promise<void> {
-    // Используем PromptService для интерактивного выбора
+    // Use PromptService for interactive selection
     const { source, selectedCollections, excludedCollections } =
       await this.promptService.promptForBackup();
 
-    // Подключение к MongoDB и получение списка коллекций
-    const spinner = ora('Подключение к базе данных...').start();
+    // Connect to MongoDB and get collection list
+    const spinner = ora('Connecting to database...').start();
 
     try {
       await this.mongoService.connect(source);
-      spinner.succeed('Подключение успешно установлено');
+      spinner.succeed('Connection successfully established');
 
-      spinner.start('Получение списка коллекций...');
+      spinner.start('Getting collection list...');
       const collections = await this.mongoService.getCollections(source.database);
-      spinner.succeed(`Получено ${collections.length} коллекций`);
+      spinner.succeed(`Got ${collections.length} collections`);
 
       await this.mongoService.close();
 
-      // Создаем резервную копию
-      spinner.start('Создание резервной копии...');
+      // Create backup
+      spinner.start('Creating backup...');
       const backupPath = await this.backupService.createBackup(
         source,
         selectedCollections,
         excludedCollections
       );
-      spinner.succeed(`Резервная копия успешно создана: ${backupPath}`);
+      spinner.succeed(`Backup successfully created: ${backupPath}`);
 
-      // Предлагаем восстановить резервную копию в другую базу данных
+      // Suggest to restore backup to another database
       const { restore } = await inquirer.prompt({
         type: 'confirm',
         name: 'restore',
-        message: 'Хотите восстановить резервную копию в другую базу данных?',
+        message: 'Do you want to restore backup to another database?',
         default: false
       });
 
@@ -108,11 +108,11 @@ export class BackupManager {
 
         await restoreService.restoreBackup(backupMetadata, target);
       } else {
-        console.log('Работа завершена. Хорошего дня!');
+        console.log('Work completed. Have a good day!');
         process.exit(0);
       }
     } catch (error) {
-      spinner.fail(`Ошибка: ${error instanceof Error ? error.message : String(error)}`);
+      spinner.fail(`Error: ${error instanceof Error ? error.message : String(error)}`);
       await this.mongoService.close();
     }
   }
@@ -123,26 +123,26 @@ export class BackupManager {
     );
 
     if (!source) {
-      throw new Error(`Источник "${preset.sourceName}" не найден в конфигурации`);
+      throw new Error(`Source "${preset.sourceName}" not found in configuration`);
     }
 
-    // Создаем массивы выбранных/исключенных коллекций на основе пресета
+    // Create arrays of selected/excluded collections based on preset
     let selectedCollections: string[] = [];
     let excludedCollections: string[] = [];
 
     if (preset.selectionMode === 'all') {
-      // Все коллекции
+      // All collections
       await this.mongoService.connect(source);
       selectedCollections = await this.mongoService.getCollections(source.database);
       await this.mongoService.close();
     } else if (preset.selectionMode === 'include') {
-      // Только указанные коллекции
+      // Only specified collections
       selectedCollections = preset.collections || [];
     } else {
-      // Исключаем указанные коллекции
+      // Exclude specified collections
       excludedCollections = preset.collections || [];
 
-      // Получаем все коллекции, чтобы исключить указанные
+      // Get all collections to exclude specified ones
       await this.mongoService.connect(source);
       const allCollections = await this.mongoService.getCollections(source.database);
       await this.mongoService.close();
@@ -152,7 +152,7 @@ export class BackupManager {
       );
     }
 
-    // Проверяем команду перед выполнением
+    // Check command before execution
     const commandArgs = [
       `--host=${source.host || 'localhost'}:${source.port || 27017}`,
       `--db=${source.database}`,
@@ -170,30 +170,30 @@ export class BackupManager {
       });
     }
 
-    console.log('\nВыполнение команды mongodump:');
+    console.log('\nExecuting mongodump command:');
     console.log(`mongodump ${commandArgs.join(' ')}\n`);
 
     const { confirm } = await inquirer.prompt({
       type: 'confirm',
       name: 'confirm',
-      message: 'Подтвердите выполнение команды:',
+      message: 'Confirm command execution:',
       default: true
     });
 
     if (confirm) {
-      // Выполняем резервное копирование
-      const spinner = ora('Создание резервной копии...').start();
+      // Run backup
+      const spinner = ora('Creating backup...').start();
       try {
-        spinner.text = 'Выполнение mongodump...';
+        spinner.text = 'Running mongodump...';
         const backupPath = await this.backupService.createBackup(
           source,
           selectedCollections,
           excludedCollections
         );
-        spinner.succeed(`Резервная копия успешно создана: ${backupPath}`);
+        spinner.succeed(`Backup successfully created: ${backupPath}`);
       } catch (error) {
         spinner.fail(
-          `Ошибка создания резервной копии: ${error instanceof Error ? error.message : String(error)}`
+          `Error creating backup: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }

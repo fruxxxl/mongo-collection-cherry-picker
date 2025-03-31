@@ -29,36 +29,36 @@ export class RestoreManager {
     collections: string[] = []
   ): Promise<void> {
     if (!fs.existsSync(backupFile)) {
-      throw new Error(`Файл резервной копии не найден: ${backupFile}`);
+      throw new Error(`Backup file not found: ${backupFile}`);
     }
 
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Находим целевое подключение
+    // Find target connection
     const targetConfig = this.config.connections.find(
       (conn: ConnectionConfig) => conn.name === targetName
     );
     if (!targetConfig) {
-      throw new Error(`Подключение "${targetName}" не найдено в конфигурации`);
+      throw new Error(`Connection "${targetName}" not found in configuration`);
     }
 
-    // Если коллекции не указаны, используем все из резервной копии
+    // If collections are not specified, use all from backup
     const collectionsToRestore = collections.length > 0 ? collections : backupMetadata.collections;
 
-    // Восстановление
+    // Restoration
     await this.restoreService.restoreBackup(backupMetadata, targetConfig, collectionsToRestore);
 
-    console.log(`Резервная копия успешно восстановлена в базу данных ${targetName}`);
+    console.log(`Backup successfully restored to database ${targetName}`);
   }
 
   async restoreDatabase(): Promise<void> {
-    // Используем PromptService для интерактивного выбора
+    // Use PromptService for interactive selection
     const { backupFile, target } = await this.promptService.promptForRestore();
 
-    // Загружаем метаданные из файла
+    // Load metadata from file
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Восстанавливаем резервную копию
+    // Restore backup
     await this.restoreService.restoreBackup(backupMetadata, target);
   }
 
@@ -68,10 +68,10 @@ export class RestoreManager {
     );
 
     if (!target) {
-      throw new Error(`Цель "${preset.targetName}" не найдена в конфигурации`);
+      throw new Error(`Target "${preset.targetName}" not found in configuration`);
     }
 
-    // Получаем список файлов резервных копий, соответствующих шаблону
+    // Get list of backup files matching pattern
     const backupFiles = this.backupService.getBackupFiles();
 
     let filteredFiles = backupFiles;
@@ -81,21 +81,21 @@ export class RestoreManager {
     }
 
     if (filteredFiles.length === 0) {
-      throw new Error('Не найдены файлы резервных копий, соответствующие шаблону');
+      throw new Error('No backup files found matching pattern');
     }
 
-    // Выбираем файл резервной копии
+    // Select backup file
     const { backupFile } = await inquirer.prompt({
       type: 'list',
       name: 'backupFile',
-      message: 'Выберите файл резервной копии для восстановления:',
+      message: 'Select backup file for restoration:',
       choices: filteredFiles
     });
 
-    // Загружаем метаданные резервной копии
+    // Load backup metadata
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Подготавливаем команду
+    // Prepare command
     const commandArgs = [
       `--host=${target.host || 'localhost'}:${target.port || 27017}`,
       `--db=${target.database}`,
@@ -104,25 +104,25 @@ export class RestoreManager {
       `--drop`
     ];
 
-    console.log('\nКоманда для выполнения:');
+    console.log('\nCommand to be executed:');
     console.log(`mongorestore ${commandArgs.join(' ')}\n`);
 
     const { confirm } = await inquirer.prompt({
       type: 'confirm',
       name: 'confirm',
-      message: 'Подтвердите выполнение команды:',
+      message: 'Confirm command execution:',
       default: true
     });
 
     if (confirm) {
-      // Выполняем восстановление
-      const spinner = ora('Восстановление резервной копии...').start();
+      // Execute restoration
+      const spinner = ora('Restoring backup...').start();
       try {
         await this.restoreService.restoreBackup(backupMetadata, target);
-        spinner.succeed(`Резервная копия успешно восстановлена в базу данных ${target.database}`);
+        spinner.succeed(`Backup successfully restored to database ${target.database}`);
       } catch (error) {
         spinner.fail(
-          `Ошибка восстановления резервной копии: ${error instanceof Error ? error.message : String(error)}`
+          `Error restoring backup: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }

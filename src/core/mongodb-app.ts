@@ -23,18 +23,18 @@ export class MongoDBApp {
   }
 
   async run(): Promise<void> {
-    // Неинтерактивный режим
+    // Non-interactive mode
     if (!this.args.interactive && this.args.mode) {
       await this.runNonInteractiveMode();
       return;
     }
 
-    // Интерактивный режим
+    // Interactive mode
     await this.runInteractiveMode();
   }
 
   private async runNonInteractiveMode(): Promise<void> {
-    console.log(`Запуск в неинтерактивном режиме: ${this.args.mode}`);
+    console.log(`Running in non-interactive mode: ${this.args.mode}`);
 
     if (this.args.mode === 'backup' && this.args.source) {
       const backupMode = this.args.backupMode || 'all';
@@ -48,20 +48,20 @@ export class MongoDBApp {
       return;
     }
 
-    console.log('Недостаточно параметров для неинтерактивного режима');
+    console.log('Insufficient parameters for non-interactive mode');
   }
 
   private async runInteractiveMode(): Promise<void> {
     const { action } = await inquirer.prompt({
       type: 'list',
       name: 'action',
-      message: 'Выберите действие',
+      message: 'Select action',
       choices: [
-        { name: 'Создать резервную копию', value: 'backup' },
-        { name: 'Восстановить из резервной копии', value: 'restore' },
-        { name: 'Создать пресет резервной копии', value: 'preset_backup' },
-        { name: 'Создать пресет восстановления', value: 'preset_restore' },
-        { name: 'Управление пресетами', value: 'manage_presets' }
+        { name: 'Create backup', value: 'backup' },
+        { name: 'Restore from backup', value: 'restore' },
+        { name: 'Create backup preset', value: 'preset_backup' },
+        { name: 'Create restore preset', value: 'preset_restore' },
+        { name: 'Manage presets', value: 'manage_presets' }
       ]
     });
 
