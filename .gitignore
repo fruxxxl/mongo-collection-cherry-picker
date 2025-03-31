@@ -14,3 +14,4 @@ backups/
 test-backups/
 *.gz.json
 test/*.log
+mongodb-backup-test.log

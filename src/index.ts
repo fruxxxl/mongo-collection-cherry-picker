@@ -9,50 +9,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { PromptService } from './utils/prompts';
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
-import { BackupPreset, RestorePreset } from './types';
 
-// Parsing command line arguments with yargs
-const argv = yargs(hideBin(process.argv))
-  .option('backup', {
-    describe: 'Create backup',
-    type: 'boolean'
-  })
-  .option('restore', {
-    describe: 'Restore from backup',
-    type: 'boolean'
-  })
-  .option('nonInteractive', {
-    describe: 'Run in non-interactive mode',
-    type: 'boolean',
-    alias: 'no-interactive'
-  })
-  .option('config', {
-    describe: 'Path to configuration file',
-    type: 'string'
-  })
-  .option('file', {
-    describe: 'Path to backup file (for restoration)',
-    type: 'string'
-  })
-  .option('source', {
-    describe: 'Source name (for backup)',
-    type: 'string'
-  })
-  .option('target', {
-    describe: 'Target name (for restoration)',
-    type: 'string'
-  })
-  .help().argv;
+import { BackupPreset, RestorePreset } from './types';
 
 async function main() {
   try {
     // Получаем параметры из командной строки через нашу функцию
     const args = parseCommandLineArgs();
 
-    // Загружаем конфигурацию
-    const config = loadConfig(args.configPath);
+    loadConfig(args.configPath);
 
     // Неинтерактивный режим - проверка через args.interactive
     if (!args.interactive && args.mode) {
