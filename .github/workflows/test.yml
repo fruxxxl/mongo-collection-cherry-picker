@@ -40,11 +40,8 @@ jobs:
           ./test/run-tests.sh
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v1
         if: always()
         with:
           name: test-logs
-          path: |
-            test-backups/
-            test/*.log
-          retention-days: 5
+          path: test/mongodb-backup-test.log
