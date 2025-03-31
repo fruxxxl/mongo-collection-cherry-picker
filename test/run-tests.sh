@@ -6,6 +6,16 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
+# Создаем файл лога
+LOG_FILE="test/mongodb-backup-test.log"
+touch "$LOG_FILE"
+
+# Перенаправление логов в файл и в консоль
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "Starting tests at $(date)"
+echo "=========================="
+
 echo -e "${YELLOW}Setting up test environment...${NC}"
 
 # Start Docker Compose

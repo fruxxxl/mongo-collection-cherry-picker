@@ -13,3 +13,4 @@ config.container.json
 backups/
 test-backups/
 *.gz.json
+test/*.log
