@@ -53,27 +53,36 @@ jobs:
 
       - name: Run tests with Docker
         run: |
-          # Подготовка - сборка проекта и копирование файлов
-          npm install
-          npm run build
-          cp -r dist test/
-          cp -r node_modules test/
-          cp package*.json test/
-          cp tsconfig.json test/
-
+          # Запускаем контейнеры
           chmod +x test/run-tests.sh
-
-          # Запуск контейнеров
           if docker compose version &>/dev/null; then
             docker compose -f test/docker-compose.test.yml up -d
           else
             docker-compose -f test/docker-compose.test.yml up -d
           fi
 
-          docker ps
-          echo "Проверяем логи контейнеров:"
-          docker logs mongo-tools
-          docker logs test-mongodb || echo "MongoDB контейнер ещё не запущен"
+          # Создаем необходимые директории в контейнере
+          echo "Создаем директории в контейнере..."
+          docker exec mongo-tools mkdir -p /app/dist
+          docker exec mongo-tools mkdir -p /app/test-backups
+          docker exec mongo-tools mkdir -p /app/test
+
+          # Копируем исходные файлы в контейнер
+          echo "Копируем файлы в контейнер..."
+          docker cp src/. mongo-tools:/app/src/
+          docker cp package.json mongo-tools:/app/
+          docker cp package-lock.json mongo-tools:/app/
+          docker cp tsconfig.json mongo-tools:/app/
+
+          # Устанавливаем зависимости и собираем проект внутри контейнера
+          echo "Установка зависимостей и сборка проекта в контейнере..."
+          docker exec -w /app mongo-tools npm install
+          docker exec -w /app mongo-tools npm run build
+
+          # Проверка структуры каталогов
+          echo "Проверяем структуру каталогов в контейнере:"
+          docker exec mongo-tools ls -la /app
+
           echo "Запускаем тесты..."
           ./test/run-tests.sh || echo "Tests failed with exit code $?"
 
