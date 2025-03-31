@@ -1,2 +1,2 @@
 declare module 'yargs';
-declare module 'yargs/helpers'; 
+declare module 'yargs/helpers';

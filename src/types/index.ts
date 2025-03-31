@@ -60,3 +60,22 @@ export interface BackupMetadata {
   date: string;
   archivePath: string;
 }
+
+export interface CommandLineArgs {
+  interactive?: boolean;
+  mode?: string;
+  source?: string;
+  backupMode?: 'all' | 'include' | 'exclude';
+  collections?: string[];
+  backupFile?: string;
+  target?: string;
+  configPath?: string;
+}
+
+export interface ConfigType {
+  connections: ConnectionConfig[];
+  backupDir: string;
+  backupPresets?: BackupPreset[];
+  restorePresets?: RestorePreset[];
+  [key: string]: any;
+}

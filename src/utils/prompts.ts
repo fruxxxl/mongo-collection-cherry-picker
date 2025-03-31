@@ -60,7 +60,7 @@ export class PromptService {
           type: 'checkbox',
           name: 'selected',
           message: 'Select collections to include in backup:',
-          choices: collections.map(coll => ({
+          choices: collections.map((coll) => ({
             name: coll,
             value: coll,
             checked: true
@@ -73,7 +73,7 @@ export class PromptService {
           type: 'checkbox',
           name: 'excluded',
           message: 'Select collections to exclude from backup (optional):',
-          choices: collections.map(coll => ({
+          choices: collections.map((coll) => ({
             name: coll,
             value: coll
           }))
@@ -88,10 +88,12 @@ export class PromptService {
       const { manualCollections } = await inquirer.prompt({
         type: 'input',
         name: 'manualCollections',
-        message: 'Enter collection names separated by comma (or leave empty for all collections):',
+        message: 'Enter collection names separated by comma (or leave empty for all collections):'
       });
 
-      const selectedCollections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
+      const selectedCollections = manualCollections
+        ? manualCollections.split(',').map((c: string) => c.trim())
+        : [];
       return { source, selectedCollections, excludedCollections: [] };
     }
   }
@@ -103,13 +105,13 @@ export class PromptService {
     // Select file for restoration
     const backupService = new BackupService(this.config);
     const backupFiles = backupService.getBackupFiles();
-    
+
     if (backupFiles.length === 0) {
       throw new Error('No backup files found in directory');
     }
-    
+
     // Filter metadata files for clearer display
-    const filteredFiles = backupFiles.map(file => {
+    const filteredFiles = backupFiles.map((file) => {
       try {
         const metadata = backupService.loadBackupMetadata(file);
         const date = new Date(metadata.date);
@@ -137,7 +139,7 @@ export class PromptService {
 
     // use selected file directly, do not search for it in the array by index
     const selectedBackupFile = backupFile;
-    
+
     const selectedBackup = backupService.loadBackupMetadata(selectedBackupFile);
 
     // Select target database
@@ -173,12 +175,15 @@ export class PromptService {
     };
   }
 
-  async promptForRestoreTarget(backupMetadata: BackupMetadata, excludeSource?: ConnectionConfig): Promise<{ target: ConnectionConfig }> {
+  async promptForRestoreTarget(
+    backupMetadata: BackupMetadata,
+    excludeSource?: ConnectionConfig
+  ): Promise<{ target: ConnectionConfig }> {
     // Filter out excluded connection if specified
-    const availableConnections = excludeSource 
-      ? this.config.connections.filter(conn => conn.name !== excludeSource.name)
+    const availableConnections = excludeSource
+      ? this.config.connections.filter((conn) => conn.name !== excludeSource.name)
       : this.config.connections;
-      
+
     if (availableConnections.length === 0) {
       throw new Error('No available connections for restore.');
     }
@@ -222,7 +227,7 @@ export class PromptService {
         message: 'Enter preset name:',
         validate: (input: string) => {
           if (!input.trim()) return 'Name cannot be empty';
-          if (this.config.backupPresets?.some(p => p.name === input.trim())) {
+          if (this.config.backupPresets?.some((p) => p.name === input.trim())) {
             return 'Preset with this name already exists';
           }
           return true;
@@ -231,7 +236,7 @@ export class PromptService {
       {
         type: 'input',
         name: 'description',
-        message: 'Enter preset description (optional):',
+        message: 'Enter preset description (optional):'
       }
     ]);
 
@@ -261,7 +266,7 @@ export class PromptService {
     });
 
     let collections: string[] = [];
-    
+
     if (selectionMode !== 'all') {
       try {
         // Connect to get collection list
@@ -269,18 +274,18 @@ export class PromptService {
         await mongoService.connect(source);
         const allCollections = await mongoService.getCollections(source.database);
         await mongoService.close();
-        
+
         // Select collections
         const { selectedCollections } = await inquirer.prompt({
           type: 'checkbox',
           name: 'selectedCollections',
           message: `Select collections to ${selectionMode === 'include' ? 'include' : 'exclude'}:`,
-          choices: allCollections.map(coll => ({
+          choices: allCollections.map((coll) => ({
             name: coll,
             value: coll
           }))
         });
-        
+
         collections = selectedCollections;
       } catch (error) {
         console.error(`Error getting collection list: ${error}`);
@@ -288,10 +293,12 @@ export class PromptService {
         const { manualCollections } = await inquirer.prompt({
           type: 'input',
           name: 'manualCollections',
-          message: `Enter collection names separated by comma (for ${selectionMode === 'include' ? 'including' : 'excluding'}):`,
+          message: `Enter collection names separated by comma (for ${selectionMode === 'include' ? 'including' : 'excluding'}):`
         });
-        
-        collections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
+
+        collections = manualCollections
+          ? manualCollections.split(',').map((c: string) => c.trim())
+          : [];
       }
     }
 
@@ -303,17 +310,17 @@ export class PromptService {
         `--gzip`,
         `--archive=./backups/backup_example.gz`
       ];
-      
+
       if (selectionMode === 'include') {
-        collections.forEach(coll => {
+        collections.forEach((coll) => {
           commandArgs.push(`--collection=${coll}`);
         });
       } else {
-        collections.forEach(coll => {
+        collections.forEach((coll) => {
           commandArgs.push(`--excludeCollection=${coll}`);
         });
       }
-      
+
       console.log('\nExecuting mongodump command:');
       console.log(`mongodump ${commandArgs.join(' ')}\n`);
     }
@@ -337,7 +344,7 @@ export class PromptService {
         message: 'Enter restore preset name:',
         validate: (input: string) => {
           if (!input.trim()) return 'Name cannot be empty';
-          if (this.config.restorePresets?.some(p => p.name === input.trim())) {
+          if (this.config.restorePresets?.some((p) => p.name === input.trim())) {
             return 'Preset with this name already exists';
           }
           return true;
@@ -346,7 +353,7 @@ export class PromptService {
       {
         type: 'input',
         name: 'description',
-        message: 'Enter preset description (optional):',
+        message: 'Enter preset description (optional):'
       }
     ]);
 
@@ -367,7 +374,7 @@ export class PromptService {
     const { backupPattern } = await inquirer.prompt({
       type: 'input',
       name: 'backupPattern',
-      message: 'Enter backup file name pattern (optional, e.g. "prod_*"):',
+      message: 'Enter backup file name pattern (optional, e.g. "prod_*"):'
     });
 
     // Preview restore command
@@ -378,7 +385,7 @@ export class PromptService {
       `--archive=./backups/example_backup.gz`,
       `--drop`
     ];
-    
+
     console.log('\nExecuting mongorestore command:');
     console.log(`mongorestore ${commandArgs.join(' ')}\n`);
 
@@ -391,35 +398,39 @@ export class PromptService {
     };
   }
 
-  async managePresets(): Promise<{ type: 'backup' | 'restore', preset: BackupPreset | RestorePreset } | undefined> {
+  async managePresets(): Promise<
+    { type: 'backup' | 'restore'; preset: BackupPreset | RestorePreset } | undefined
+  > {
     const backupPresets = this.config.backupPresets || [];
     const restorePresets = this.config.restorePresets || [];
-    
-    console.log(`DEBUG: Found ${backupPresets.length} backup presets and ${restorePresets.length} restore presets`);
-    
+
+    console.log(
+      `DEBUG: Found ${backupPresets.length} backup presets and ${restorePresets.length} restore presets`
+    );
+
     if (backupPresets.length === 0 && restorePresets.length === 0) {
       console.log('No saved presets found. Please create a preset first.');
       return undefined;
     }
-    
+
     const choices = [
-      ...backupPresets.map(preset => ({
+      ...backupPresets.map((preset) => ({
         name: `[Backup] ${preset.name} - ${preset.description || 'No description'}`,
         value: { type: 'backup', preset }
       })),
-      ...restorePresets.map(preset => ({
+      ...restorePresets.map((preset) => ({
         name: `[Restore] ${preset.name} - ${preset.description || 'No description'}`,
         value: { type: 'restore', preset }
       }))
     ];
-    
+
     const { selected } = await inquirer.prompt({
       type: 'list',
       name: 'selected',
       message: 'Select preset:',
       choices
     });
-    
+
     const { action } = await inquirer.prompt({
       type: 'list',
       name: 'action',
@@ -430,7 +441,7 @@ export class PromptService {
         { name: 'Delete', value: 'delete' }
       ]
     });
-    
+
     if (action === 'use') {
       // Use preset
       return selected;
@@ -447,14 +458,16 @@ export class PromptService {
         message: `Are you sure you want to delete preset "${selected.preset.name}"?`,
         default: false
       });
-      
+
       if (confirm) {
         if (selected.type === 'backup') {
-          this.config.backupPresets = backupPresets.filter(p => p.name !== selected.preset.name);
+          this.config.backupPresets = backupPresets.filter((p) => p.name !== selected.preset.name);
         } else {
-          this.config.restorePresets = restorePresets.filter(p => p.name !== selected.preset.name);
+          this.config.restorePresets = restorePresets.filter(
+            (p) => p.name !== selected.preset.name
+          );
         }
-        
+
         // Save changes to configuration
         savePresets(this.config);
         console.log(`Preset "${selected.preset.name}" successfully deleted.`);
@@ -463,4 +476,4 @@ export class PromptService {
     }
     return undefined;
   }
-} 
+}

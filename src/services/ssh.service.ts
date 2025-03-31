@@ -17,7 +17,11 @@ export class SSHService {
   async createTunnel(): Promise<string> {
     return new Promise((resolve, reject) => {
       // Expand tilde in private key path
-      const privateKeyPath = this.config.privateKey.replace(/^~/, process.env.HOME || process.env.USERPROFILE || '');
+
+      const privateKeyPath = this.config.privateKey.replace(
+        /^~/,
+        process.env.HOME || process.env.USERPROFILE || ''
+      );
       const privateKey = fs.readFileSync(path.resolve(privateKeyPath));
 
       this.client.on('ready', () => {
@@ -65,4 +69,4 @@ export class SSHService {
     }
     this.client.end();
   }
-} 
+}
