@@ -44,7 +44,9 @@ export class MongoDBApp {
     }
 
     if (this.args.mode === 'restore' && this.args.backupFile && this.args.target) {
-      await this.restoreManager.runRestore(this.args.backupFile, this.args.target, []);
+      await this.restoreManager.runRestore(this.args.backupFile, this.args.target, {
+        drop: this.args.drop || false
+      });
       return;
     }
 
@@ -60,7 +62,6 @@ export class MongoDBApp {
         { name: 'Create backup', value: 'backup' },
         { name: 'Restore from backup', value: 'restore' },
         { name: 'Create backup preset', value: 'preset_backup' },
-        { name: 'Create restore preset', value: 'preset_restore' },
         { name: 'Manage presets', value: 'manage_presets' }
       ]
     });
@@ -74,9 +75,6 @@ export class MongoDBApp {
         break;
       case 'preset_backup':
         await this.presetManager.createBackupPreset();
-        break;
-      case 'preset_restore':
-        await this.presetManager.createRestorePreset();
         break;
       case 'manage_presets':
         await this.presetManager.managePresets();

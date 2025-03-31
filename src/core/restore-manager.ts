@@ -6,7 +6,7 @@ import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
 import { PromptService } from '../utils/prompts';
-import { AppConfig, RestorePreset, ConnectionConfig } from '../types/index';
+import { AppConfig, RestorePreset, ConnectionConfig, RestoreOptions } from '../types/index';
 
 export class RestoreManager {
   private config: AppConfig;
@@ -26,7 +26,7 @@ export class RestoreManager {
   async runRestore(
     backupFile: string,
     targetName: string,
-    collections: string[] = []
+    options: RestoreOptions = {}
   ): Promise<void> {
     if (!fs.existsSync(backupFile)) {
       throw new Error(`Backup file not found: ${backupFile}`);
@@ -42,24 +42,21 @@ export class RestoreManager {
       throw new Error(`Connection "${targetName}" not found in configuration`);
     }
 
-    // If collections are not specified, use all from backup
-    const collectionsToRestore = collections.length > 0 ? collections : backupMetadata.collections;
-
-    // Restoration
-    await this.restoreService.restoreBackup(backupMetadata, targetConfig, collectionsToRestore);
+    // Restoration with provided options
+    await this.restoreService.restoreBackup(backupMetadata, targetConfig, options);
 
     console.log(`Backup successfully restored to database ${targetName}`);
   }
 
   async restoreDatabase(): Promise<void> {
     // Use PromptService for interactive selection
-    const { backupFile, target } = await this.promptService.promptForRestore();
+    const { backupFile, target, options } = await this.promptService.promptForRestore();
 
     // Load metadata from file
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Restore backup
-    await this.restoreService.restoreBackup(backupMetadata, target);
+    // Restore backup with options
+    await this.restoreService.restoreBackup(backupMetadata, target, options);
   }
 
   async useRestorePreset(preset: RestorePreset): Promise<void> {
@@ -95,14 +92,21 @@ export class RestoreManager {
     // Load backup metadata
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
+    // Get restore options from preset or defaults
+    const options = preset.options || {};
+
     // Prepare command
     const commandArgs = [
       `--host=${target.host || 'localhost'}:${target.port || 27017}`,
       `--db=${target.database}`,
       `--gzip`,
-      `--archive=${path.join(this.config.backupDir, backupFile)}`,
-      `--drop`
+      `--archive=${path.join(this.config.backupDir, backupFile)}`
     ];
+
+    // Add drop option if set
+    if (options.drop) {
+      commandArgs.push('--drop');
+    }
 
     console.log('\nCommand to be executed:');
     console.log(`mongorestore ${commandArgs.join(' ')}\n`);
@@ -118,7 +122,7 @@ export class RestoreManager {
       // Execute restoration
       const spinner = ora('Restoring backup...').start();
       try {
-        await this.restoreService.restoreBackup(backupMetadata, target);
+        await this.restoreService.restoreBackup(backupMetadata, target, options);
         spinner.succeed(`Backup successfully restored to database ${target.database}`);
       } catch (error) {
         spinner.fail(

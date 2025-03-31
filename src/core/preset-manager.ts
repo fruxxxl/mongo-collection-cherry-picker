@@ -53,45 +53,12 @@ export class PresetManager {
     }
   }
 
-  async createRestorePreset(): Promise<void> {
-    try {
-      const preset = await this.promptService.promptForRestorePreset();
-
-      // Initialize presets array if it doesn't exist
-      if (!this.config.restorePresets) {
-        this.config.restorePresets = [];
-      }
-
-      // Add new preset
-      this.config.restorePresets.push(preset);
-
-      // Save configuration
-      savePresets(this.config);
-
-      console.log(`Restore preset "${preset.name}" successfully created!`);
-
-      // Suggest to use preset immediately
-      const { useNow } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'useNow',
-        message: 'Do you want to use this preset right now?',
-        default: true
-      });
-
-      if (useNow) {
-        await this.restoreManager.useRestorePreset(preset);
-      }
-    } catch (error) {
-      console.error(
-        `Error creating preset: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
   async managePresets(): Promise<void> {
     // Add debug output
     console.log(
-      `DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets and ${this.config.restorePresets?.length || 0} restore presets`
+      `DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets and ${
+        this.config.restorePresets?.length || 0
+      } restore presets`
     );
     if (this.config.backupPresets) {
       console.log(
@@ -105,10 +72,10 @@ export class PresetManager {
     }
 
     // Check for presets
-    if (
-      (!this.config.backupPresets || this.config.backupPresets.length === 0) &&
-      (!this.config.restorePresets || this.config.restorePresets.length === 0)
-    ) {
+    const hasBackupPresets = this.config.backupPresets && this.config.backupPresets.length > 0;
+    const hasRestorePresets = this.config.restorePresets && this.config.restorePresets.length > 0;
+
+    if (!hasBackupPresets && !hasRestorePresets) {
       console.log('No saved presets found. Please create a preset first.');
       return;
     }

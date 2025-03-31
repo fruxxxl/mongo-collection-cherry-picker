@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
+import { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../types';
 
 export class BackupService {
   private config: AppConfig;
@@ -245,7 +245,11 @@ export class BackupService {
     return null;
   }
 
-  async restoreBackup(target: ConnectionConfig, archivePath: string): Promise<boolean> {
+  async restoreBackup(
+    target: ConnectionConfig,
+    archivePath: string,
+    options: RestoreOptions
+  ): Promise<boolean> {
     try {
       console.log(`Full path to backup directory: ${path.resolve(this.config.backupDir)}`);
 
@@ -293,7 +297,9 @@ export class BackupService {
       args.push('--gzip');
       args.push('--archive');
 
-      args.push('--drop');
+      if (options.drop) {
+        args.push('--drop');
+      }
 
       // Output command for debugging
       const commandString = `cat ${fullPath} | ${this.config.mongorestorePath || 'mongorestore'} ${args.join(' ')}`;

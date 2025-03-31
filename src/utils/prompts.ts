@@ -2,7 +2,7 @@ import inquirer from 'inquirer';
 import { AppConfig, ConnectionConfig, BackupMetadata, BackupPreset, RestorePreset } from '../types';
 import { BackupService } from '../services/backup.service';
 import { MongoDBService } from '../services/mongodb.service';
-import { formatDate, savePresets } from '../utils';
+import { savePresets } from '../utils';
 
 export class PromptService {
   private config: AppConfig;
@@ -101,84 +101,53 @@ export class PromptService {
   async promptForRestore(): Promise<{
     target: ConnectionConfig;
     backupFile: string;
+    options: { drop: boolean };
   }> {
-    // Select file for restoration
-    const backupService = new BackupService(this.config);
-    const backupFiles = backupService.getBackupFiles();
+    // Получаем список файлов резервных копий
+    const backupFiles = this.backupService.getBackupFiles();
 
     if (backupFiles.length === 0) {
-      throw new Error('No backup files found in directory');
+      throw new Error('No backup files found');
     }
 
-    // Filter metadata files for clearer display
-    const filteredFiles = backupFiles.map((file) => {
-      try {
-        const metadata = backupService.loadBackupMetadata(file);
-        const date = new Date(metadata.date);
-        const formattedDate = formatDate(date);
-        return {
-          name: `${file} - ${metadata.source} (${metadata.database}) - ${formattedDate}`,
-          value: file
-        };
-      } catch (error) {
-        // If metadata cannot be loaded, just display the file name
-        return {
-          name: file,
-          value: file
-        };
-      }
-    });
-
-    // Select backup file
+    // Ask user to select backup file
     const { backupFile } = await inquirer.prompt({
       type: 'list',
       name: 'backupFile',
-      message: 'Select backup to restore:',
-      choices: filteredFiles
+      message: 'Select backup file to restore:',
+      choices: backupFiles
     });
 
-    // use selected file directly, do not search for it in the array by index
-    const selectedBackupFile = backupFile;
-
-    const selectedBackup = backupService.loadBackupMetadata(selectedBackupFile);
-
-    // Select target database
-    const { targetIndex } = await inquirer.prompt({
+    // Ask user to select target database
+    const { target } = await inquirer.prompt({
       type: 'list',
-      name: 'targetIndex',
-      message: 'Select target database for restore:',
-      choices: this.config.connections.map((conn, index) => ({
+      name: 'target',
+      message: 'Select target database:',
+      choices: this.config.connections.map((conn) => ({
         name: `${conn.name} (${conn.database})`,
-        value: index
+        value: conn
       }))
     });
 
-    const target = this.config.connections[targetIndex];
-
-    // If source and target databases are different, warn user
-    if (selectedBackup.database !== target.database) {
-      const { confirmDifferentDB } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'confirmDifferentDB',
-        message: `Warning! Source database (${selectedBackup.database}) and target database (${target.database}) are different. Continue?`,
-        default: false
-      });
-
-      if (!confirmDifferentDB) {
-        throw new Error('Restore canceled by user.');
-      }
-    }
+    // Ask user to confirm dropping existing collections
+    const { drop } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'drop',
+      message: 'Drop existing collections before restore?',
+      default: false
+    });
 
     return {
+      backupFile,
       target,
-      backupFile: selectedBackupFile
+      options: { drop }
     };
   }
 
   async promptForRestoreTarget(
     backupMetadata: BackupMetadata,
     excludeSource?: ConnectionConfig
-  ): Promise<{ target: ConnectionConfig }> {
+  ): Promise<{ target: ConnectionConfig; options: { drop: boolean } }> {
     // Filter out excluded connection if specified
     const availableConnections = excludeSource
       ? this.config.connections.filter((conn) => conn.name !== excludeSource.name)
@@ -215,7 +184,17 @@ export class PromptService {
       }
     }
 
-    return { target };
+    // Ask user to confirm dropping existing collections
+    const { drop } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'drop',
+      message: 'Drop existing collections before restore?',
+      default: false
+    });
+
+    const options = { drop };
+
+    return { target, options };
   }
 
   async promptForBackupPreset(): Promise<BackupPreset> {
@@ -335,80 +314,14 @@ export class PromptService {
     };
   }
 
-  async promptForRestorePreset(): Promise<RestorePreset> {
-    // Get basic information
-    const { name, description } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'name',
-        message: 'Enter restore preset name:',
-        validate: (input: string) => {
-          if (!input.trim()) return 'Name cannot be empty';
-          if (this.config.restorePresets?.some((p) => p.name === input.trim())) {
-            return 'Preset with this name already exists';
-          }
-          return true;
-        }
-      },
-      {
-        type: 'input',
-        name: 'description',
-        message: 'Enter preset description (optional):'
-      }
-    ]);
-
-    // Select target database
-    const { targetIndex } = await inquirer.prompt({
-      type: 'list',
-      name: 'targetIndex',
-      message: 'Select target database for restore:',
-      choices: this.config.connections.map((conn, index) => ({
-        name: `${conn.name} (${conn.database})`,
-        value: index
-      }))
-    });
-
-    const target = this.config.connections[targetIndex];
-
-    // Backup file pattern
-    const { backupPattern } = await inquirer.prompt({
-      type: 'input',
-      name: 'backupPattern',
-      message: 'Enter backup file name pattern (optional, e.g. "prod_*"):'
-    });
-
-    // Preview restore command
-    const commandArgs = [
-      `--host=${target.host || 'localhost'}:${target.port || 27017}`,
-      `--db=${target.database}`,
-      `--gzip`,
-      `--archive=./backups/example_backup.gz`,
-      `--drop`
-    ];
-
-    console.log('\nExecuting mongorestore command:');
-    console.log(`mongorestore ${commandArgs.join(' ')}\n`);
-
-    return {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      targetName: target.name,
-      backupPattern: backupPattern.trim() || undefined,
-      createdAt: new Date().toISOString()
-    };
-  }
-
   async managePresets(): Promise<
     { type: 'backup' | 'restore'; preset: BackupPreset | RestorePreset } | undefined
   > {
     const backupPresets = this.config.backupPresets || [];
-    const restorePresets = this.config.restorePresets || [];
 
-    console.log(
-      `DEBUG: Found ${backupPresets.length} backup presets and ${restorePresets.length} restore presets`
-    );
+    console.log(`DEBUG: Found ${backupPresets.length} backup presets`);
 
-    if (backupPresets.length === 0 && restorePresets.length === 0) {
+    if (backupPresets.length === 0) {
       console.log('No saved presets found. Please create a preset first.');
       return undefined;
     }
@@ -417,10 +330,6 @@ export class PromptService {
       ...backupPresets.map((preset) => ({
         name: `[Backup] ${preset.name} - ${preset.description || 'No description'}`,
         value: { type: 'backup', preset }
-      })),
-      ...restorePresets.map((preset) => ({
-        name: `[Restore] ${preset.name} - ${preset.description || 'No description'}`,
-        value: { type: 'restore', preset }
       }))
     ];
 
@@ -462,10 +371,6 @@ export class PromptService {
       if (confirm) {
         if (selected.type === 'backup') {
           this.config.backupPresets = backupPresets.filter((p) => p.name !== selected.preset.name);
-        } else {
-          this.config.restorePresets = restorePresets.filter(
-            (p) => p.name !== selected.preset.name
-          );
         }
 
         // Save changes to configuration

@@ -103,10 +103,13 @@ export class BackupManager {
 
       if (restore) {
         const backupMetadata = this.backupService.loadBackupMetadata(backupPath);
-        const { target } = await this.promptService.promptForRestoreTarget(backupMetadata, source);
+        const { target, options } = await this.promptService.promptForRestoreTarget(
+          backupMetadata,
+          source
+        );
         const restoreService = new RestoreService(this.config);
 
-        await restoreService.restoreBackup(backupMetadata, target);
+        await restoreService.restoreBackup(backupMetadata, target, options);
       } else {
         console.log('Work completed. Have a good day!');
         process.exit(0);

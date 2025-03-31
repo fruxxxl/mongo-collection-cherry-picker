@@ -18,6 +18,7 @@ export interface ConnectionConfig {
   username?: string;
   password?: string;
   authenticationDatabase?: string;
+  authSource?: string;
   authDatabase?: string;
   hosts?: Array<{ host: string; port?: number }>;
   replicaSet?: string;
@@ -34,12 +35,17 @@ export interface BackupPreset {
   createdAt: string;
 }
 
+export interface RestoreOptions {
+  drop?: boolean;
+}
+
 export interface RestorePreset {
   name: string;
   targetName: string;
-  description?: string;
   backupPattern?: string;
-  createdAt: string;
+  options?: RestoreOptions;
+  createdAt?: string;
+  description?: string;
 }
 
 export interface AppConfig {
@@ -70,6 +76,7 @@ export interface CommandLineArgs {
   backupFile?: string;
   target?: string;
   configPath?: string;
+  drop?: boolean;
 }
 
 export interface ConfigType {

@@ -1,4 +1,4 @@
-import { BackupMetadata, ConnectionConfig, AppConfig } from '../types';
+import { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../types/index';
 import ora from 'ora';
 import { BackupService } from './backup.service';
 import path from 'path';
@@ -13,7 +13,7 @@ export class RestoreService {
   async restoreBackup(
     backupMetadata: BackupMetadata,
     target: ConnectionConfig,
-    collections: string[] = []
+    options: RestoreOptions
   ): Promise<boolean> {
     const spinner = ora('Restoring backup...').start();
 
@@ -23,7 +23,7 @@ export class RestoreService {
       const archivePath = path.join(this.config.backupDir, backupMetadata.archivePath);
 
       console.log(`Restoring from file: ${archivePath}`);
-      const result = await backupService.restoreBackup(target, archivePath);
+      const result = await backupService.restoreBackup(target, archivePath, options);
 
       if (!result) {
         throw new Error('Failed to restore backup');
