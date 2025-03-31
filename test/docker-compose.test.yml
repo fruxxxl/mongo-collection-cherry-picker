@@ -15,7 +15,7 @@ services:
 
   # Container with MongoDB tools for testing
   mongo-tools:
-    image: node:16-alpine
+    image: node:22-alpine
     container_name: mongo-tools
     depends_on:
       - mongodb
