@@ -9,7 +9,7 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}Setting up test environment...${NC}"
 
 # Start Docker Compose
-docker-compose -f docker-compose.test.yml up -d
+docker-compose -f test/docker-compose.test.yml up -d
 
 # Waiting for MongoDB to be ready
 echo -e "${YELLOW}Waiting for MongoDB to be ready...${NC}"
@@ -28,7 +28,7 @@ if ! docker ps | grep -q mongo-tools; then
   echo -e "${YELLOW}Checking container logs...${NC}"
   docker logs mongo-tools
   echo -e "${YELLOW}Trying to restart container...${NC}"
-  docker-compose -f docker-compose.test.yml up -d mongo-tools
+  docker-compose -f test/docker-compose.test.yml up -d mongo-tools
   sleep 10
   
   if ! docker ps | grep -q mongo-tools; then
@@ -76,10 +76,10 @@ echo -e "${GREEN}✓ MongoDB is ready to work${NC}"
 echo -e "\n${YELLOW}=== Test utility backup MongoDB ===${NC}\n"
 
 # Create temporary configuration with settings for connecting to MongoDB container
-cat > config.container.json << EOF
+cat > test/config.container.json << EOF
 {
-  "backupDir": "backups",
-  "filenameFormat": "backup_{{date}}_{{source}}.gz",
+  "backupDir": "test-backups",
+  "filenameFormat": "test_backup_{{date}}_{{source}}.gz",
   "mongodumpPath": "mongodump",
   "mongorestorePath": "mongorestore",
   "connections": [
@@ -110,7 +110,7 @@ EOF
 
 # Copy source code and configuration to container
 echo -e "${YELLOW}Checking access to source code...${NC}"
-docker exec mongo-tools sh -c "cd /app && ls -la && mkdir -p backups"
+docker exec mongo-tools sh -c "cd /app && ls -la && mkdir -p backups test-backups"
 
 # Add test data to MongoDB
 echo -e "${YELLOW}Adding test data to MongoDB...${NC}"
@@ -146,14 +146,14 @@ docker exec test-mongodb mongo --quiet mongodb://localhost:27017/testdb --eval '
 
 # Test direct backup
 echo -e "${YELLOW}Testing direct backup...${NC}"
-docker exec -w /app mongo-tools node ./dist/index.js --config=config.container.json --backup --source="Test MongoDB" --mode=all
+docker exec -w /app mongo-tools npm run backup -- --config=test/config.container.json --source="Test MongoDB" --mode=all
 
 # Check backup creation
-BACKUP_COUNT=$(docker exec -w /app mongo-tools sh -c "ls -la backups/*.gz 2>/dev/null | wc -l")
+BACKUP_COUNT=$(docker exec -w /app mongo-tools sh -c "ls -la test-backups/*.gz 2>/dev/null | wc -l")
   
 if [ "$BACKUP_COUNT" -gt 0 ]; then
   echo -e "${GREEN}✓ Backup created successfully by utility${NC}"
-  BACKUP_FILE=$(docker exec -w /app mongo-tools sh -c "ls -t backups/*.gz 2>/dev/null | head -1")
+  BACKUP_FILE=$(docker exec -w /app mongo-tools sh -c "ls -t test-backups/*.gz 2>/dev/null | head -1")
   echo -e "  Backup file: $BACKUP_FILE"
   
   # Check backup file existence
@@ -194,7 +194,7 @@ if [ "$BACKUP_COUNT" -gt 0 ]; then
   fi
   
   echo -e "Restore file: $BACKUP_FILE"
-  docker exec -w /app mongo-tools node ./dist/index.js --config=config.container.json --restore --file="$BACKUP_FILE" --target="Test Restore DB"
+  docker exec -w /app mongo-tools npm run restore -- --config=test/config.container.json --file="$BACKUP_FILE" --target="Test Restore DB"
   
   # Check restoration data
   echo -e "\n${YELLOW}Checking restored data...${NC}"
@@ -268,7 +268,9 @@ else
 fi
 
 echo -e "\n${YELLOW}=== Manual testing ===${NC}"
-echo -e "For manual utility launch use: npm start -- --config=config.container.json"
+echo -e "For interactive mode: npm run interactive -- --config=test/config.container.json"
+echo -e "For backup: npm run backup -- --config=test/config.container.json --source=SourceName --mode=all"
+echo -e "For restore: npm run restore -- --config=test/config.container.json --file=path/to/backup.gz --target=TargetName"
 echo -e "For connecting to test MongoDB: docker exec -it test-mongodb mongo mongodb://$MONGODB_IP:27017/"
 
 echo -e "\n${YELLOW}Press Enter to stop the test environment or Ctrl+C to exit and save the environment${NC}"
@@ -276,9 +278,16 @@ read -r
 
 # Stop Docker Compose
 echo -e "${YELLOW}Stopping test environment...${NC}"
-docker-compose -f docker-compose.test.yml down -v
+docker-compose -f test/docker-compose.test.yml down -v
 
 # Delete temporary configuration
-rm -f config.container.json
+rm -f test/config.container.json
+
+# Make sure test-backups directory exists
+docker exec mongo-tools sh -c "cd /app && mkdir -p test-backups"
+
+# Clean up test backups after tests
+echo -e "${YELLOW}Cleaning up test backups...${NC}"
+docker exec -w /app mongo-tools sh -c "rm -rf test-backups/*.gz test-backups/*.json"
 
 echo -e "${GREEN}All tests completed successfully.${NC}" 

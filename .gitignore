@@ -11,3 +11,5 @@ test/auto_backup.exp
 test/auto_restore.exp
 config.container.json
 backups/
+test-backups/
+*.gz.json
