@@ -9,7 +9,7 @@ services:
       - "27999:27017"
     volumes:
       - test_mongodb_data:/data/db
-      - ./test/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     networks:
       - mongo-network
 
@@ -20,14 +20,20 @@ services:
     depends_on:
       - mongodb
     volumes:
+      - ../:/source
       - ./:/app
-      - ./backups:/backups
-      - ./test-backups:/app/test-backups
+      - ../backups:/backups
+      - ../test-backups:/app/test-backups
     working_dir: /app
     command: >
       sh -c "
         echo 'Installing MongoDB tools...' &&
         apk add --no-cache mongodb-tools &&
+        echo 'Setting up test environment...' &&
+        cp -r /source/package*.json /app/ &&
+        cp -r /source/tsconfig.json /app/ &&
+        cp -r /source/src /app/ &&
+        cp -r /source/dist /app/ || true &&
         echo 'Checking environment:' &&
         ls -la /app &&
         echo 'Package.json содержимое:' &&

@@ -53,9 +53,17 @@ jobs:
 
       - name: Run tests with Docker
         run: |
+          # Подготовка - сборка проекта и копирование файлов
+          npm install
+          npm run build
+          cp -r dist test/
+          cp -r node_modules test/
+          cp package*.json test/
+          cp tsconfig.json test/
+
           chmod +x test/run-tests.sh
 
-          # Используем docker compose или docker-compose
+          # Запуск контейнеров
           if docker compose version &>/dev/null; then
             docker compose -f test/docker-compose.test.yml up -d
           else
