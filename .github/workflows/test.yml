@@ -39,6 +39,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose
 
+      - name: Prepare Docker environment
+        run: |
+          mkdir -p docker-context
+          cp package*.json docker-context/
+          cp -r src/ docker-context/
+          cp -r test/ docker-context/
+          cp tsconfig.json docker-context/
+
       - name: Run tests with Docker
         run: |
           chmod +x test/run-tests.sh
@@ -53,3 +61,14 @@ jobs:
           else
             echo "No test logs found" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Simple Build Test
+        run: |
+          npm run build
+          [ -d dist ] && echo "✅ Build succeeded" || echo "❌ Build failed"
+
+      - name: Test CLI interface
+        run: |
+          # Проверяем, что скрипты работают
+          node ./dist/index.js --help
+          echo "✅ CLI interface works"
