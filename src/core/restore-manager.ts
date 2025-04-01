@@ -23,11 +23,7 @@ export class RestoreManager {
     this.promptService = new PromptService(config);
   }
 
-  async runRestore(
-    backupFile: string,
-    targetName: string,
-    options: RestoreOptions = {}
-  ): Promise<void> {
+  async runRestore(backupFile: string, targetName: string, options: RestoreOptions = {}): Promise<void> {
     if (!fs.existsSync(backupFile)) {
       throw new Error(`Backup file not found: ${backupFile}`);
     }
@@ -35,9 +31,7 @@ export class RestoreManager {
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
     // Find target connection
-    const targetConfig = this.config.connections.find(
-      (conn: ConnectionConfig) => conn.name === targetName
-    );
+    const targetConfig = this.config.connections.find((conn: ConnectionConfig) => conn.name === targetName);
     if (!targetConfig) {
       throw new Error(`Connection "${targetName}" not found in configuration`);
     }
@@ -68,9 +62,7 @@ export class RestoreManager {
   }
 
   async useRestorePreset(preset: RestorePreset): Promise<void> {
-    const target = this.config.connections.find(
-      (conn: ConnectionConfig) => conn.name === preset.targetName
-    );
+    const target = this.config.connections.find((conn: ConnectionConfig) => conn.name === preset.targetName);
 
     if (!target) {
       throw new Error(`Target "${preset.targetName}" not found in configuration`);
@@ -94,7 +86,7 @@ export class RestoreManager {
       type: 'list',
       name: 'backupFile',
       message: 'Select backup file for restoration:',
-      choices: filteredFiles
+      choices: filteredFiles,
     });
 
     // Load backup metadata
@@ -107,8 +99,8 @@ export class RestoreManager {
     const commandArgs = [
       `--host=${target.host || 'localhost'}:${target.port || 27017}`,
       `--db=${target.database}`,
-      `--gzip`,
-      `--archive=${path.join(this.config.backupDir, backupFile)}`
+      '--gzip',
+      `--archive=${path.join(this.config.backupDir, backupFile)}`,
     ];
 
     // Add drop option if set
@@ -123,7 +115,7 @@ export class RestoreManager {
       type: 'confirm',
       name: 'confirm',
       message: 'Confirm command execution:',
-      default: true
+      default: true,
     });
 
     if (confirm) {
@@ -133,9 +125,7 @@ export class RestoreManager {
         await this.restoreService.restoreBackup(backupMetadata, target, options);
         spinner.succeed(`Backup successfully restored to database ${target.database}`);
       } catch (error) {
-        spinner.fail(
-          `Error restoring backup: ${error instanceof Error ? error.message : String(error)}`
-        );
+        spinner.fail(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }

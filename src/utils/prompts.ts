@@ -28,8 +28,8 @@ export class PromptService {
       message: 'Select source for backup:',
       choices: this.config.connections.map((conn, index) => ({
         name: `${conn.name} (${conn.database})`,
-        value: index
-      }))
+        value: index,
+      })),
     });
 
     const source = this.config.connections[sourceIndex];
@@ -50,7 +50,7 @@ export class PromptService {
         type: 'confirm',
         name: 'allCollections',
         message: 'Include all collections in backup?',
-        default: true
+        default: true,
       });
 
       let selectedCollections: string[] = [];
@@ -64,8 +64,8 @@ export class PromptService {
           choices: collections.map((coll) => ({
             name: coll,
             value: coll,
-            checked: true
-          }))
+            checked: true,
+          })),
         });
         selectedCollections = selected;
       } else {
@@ -76,8 +76,8 @@ export class PromptService {
           message: 'Select collections to exclude from backup (optional):',
           choices: collections.map((coll) => ({
             name: coll,
-            value: coll
-          }))
+            value: coll,
+          })),
         });
         excludedCollections = excluded;
       }
@@ -89,12 +89,10 @@ export class PromptService {
       const { manualCollections } = await inquirer.prompt({
         type: 'input',
         name: 'manualCollections',
-        message: 'Enter collection names separated by comma (or leave empty for all collections):'
+        message: 'Enter collection names separated by comma (or leave empty for all collections):',
       });
 
-      const selectedCollections = manualCollections
-        ? manualCollections.split(',').map((c: string) => c.trim())
-        : [];
+      const selectedCollections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
       return { source, selectedCollections, excludedCollections: [] };
     }
   }
@@ -116,7 +114,7 @@ export class PromptService {
       type: 'list',
       name: 'backupFile',
       message: 'Select backup file to restore:',
-      choices: backupFiles
+      choices: backupFiles,
     });
 
     // Ask user to select target database
@@ -126,8 +124,8 @@ export class PromptService {
       message: 'Select target database:',
       choices: this.config.connections.map((conn) => ({
         name: `${conn.name} (${conn.database})`,
-        value: conn
-      }))
+        value: conn,
+      })),
     });
 
     // Ask user to confirm dropping existing collections
@@ -135,19 +133,19 @@ export class PromptService {
       type: 'confirm',
       name: 'drop',
       message: 'Drop existing collections before restore?',
-      default: false
+      default: false,
     });
 
     return {
       backupFile,
       target,
-      options: { drop }
+      options: { drop },
     };
   }
 
   async promptForRestoreTarget(
     backupMetadata: BackupMetadata,
-    excludeSource?: ConnectionConfig
+    excludeSource?: ConnectionConfig,
   ): Promise<{ target: ConnectionConfig; options: { drop: boolean } }> {
     // Filter out excluded connection if specified
     const availableConnections = excludeSource
@@ -165,8 +163,8 @@ export class PromptService {
       message: 'Select target database for restore:',
       choices: availableConnections.map((conn, index) => ({
         name: `${conn.name} (${conn.database})`,
-        value: index
-      }))
+        value: index,
+      })),
     });
 
     const target = availableConnections[targetIndex];
@@ -177,7 +175,7 @@ export class PromptService {
         type: 'confirm',
         name: 'confirmDifferentDB',
         message: `Warning! Source database (${backupMetadata.database}) and target database (${target.database}) are different. Continue?`,
-        default: false
+        default: false,
       });
 
       if (!confirmDifferentDB) {
@@ -190,7 +188,7 @@ export class PromptService {
       type: 'confirm',
       name: 'drop',
       message: 'Drop existing collections before restore?',
-      default: false
+      default: false,
     });
 
     const options = { drop };
@@ -211,13 +209,13 @@ export class PromptService {
             return 'Preset with this name already exists';
           }
           return true;
-        }
+        },
       },
       {
         type: 'input',
         name: 'description',
-        message: 'Enter preset description (optional):'
-      }
+        message: 'Enter preset description (optional):',
+      },
     ]);
 
     // Select source
@@ -227,8 +225,8 @@ export class PromptService {
       message: 'Select source for backup:',
       choices: this.config.connections.map((conn, index) => ({
         name: `${conn.name} (${conn.database})`,
-        value: index
-      }))
+        value: index,
+      })),
     });
 
     const source = this.config.connections[sourceIndex];
@@ -241,8 +239,8 @@ export class PromptService {
       choices: [
         { name: 'All collections', value: 'all' },
         { name: 'Include only specified collections', value: 'include' },
-        { name: 'Exclude specified collections', value: 'exclude' }
-      ]
+        { name: 'Exclude specified collections', value: 'exclude' },
+      ],
     });
 
     let collections: string[] = [];
@@ -262,8 +260,8 @@ export class PromptService {
           message: `Select collections to ${selectionMode === 'include' ? 'include' : 'exclude'}:`,
           choices: allCollections.map((coll) => ({
             name: coll,
-            value: coll
-          }))
+            value: coll,
+          })),
         });
 
         collections = selectedCollections;
@@ -273,12 +271,10 @@ export class PromptService {
         const { manualCollections } = await inquirer.prompt({
           type: 'input',
           name: 'manualCollections',
-          message: `Enter collection names separated by comma (for ${selectionMode === 'include' ? 'including' : 'excluding'}):`
+          message: `Enter collection names separated by comma (for ${selectionMode === 'include' ? 'including' : 'excluding'}):`,
         });
 
-        collections = manualCollections
-          ? manualCollections.split(',').map((c: string) => c.trim())
-          : [];
+        collections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
       }
     }
 
@@ -294,8 +290,8 @@ export class PromptService {
       const commandArgs = [
         `--host=${source.host || 'localhost'}:${source.port || 27017}`,
         `--db=${source.database}`,
-        `--gzip`,
-        `--archive=${archivePath}`
+        '--gzip',
+        `--archive=${archivePath}`,
       ];
 
       if (selectionMode === 'include') {
@@ -318,13 +314,11 @@ export class PromptService {
       sourceName: source.name,
       selectionMode,
       collections: selectionMode !== 'all' ? collections : undefined,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
   }
 
-  async managePresets(): Promise<
-    { type: 'backup' | 'restore'; preset: BackupPreset | RestorePreset } | undefined
-  > {
+  async managePresets(): Promise<{ type: 'backup' | 'restore'; preset: BackupPreset | RestorePreset } | undefined> {
     const backupPresets = this.config.backupPresets || [];
 
     console.log(`DEBUG: Found ${backupPresets.length} backup presets`);
@@ -337,15 +331,15 @@ export class PromptService {
     const choices = [
       ...backupPresets.map((preset) => ({
         name: `[Backup] ${preset.name} - ${preset.description || 'No description'}`,
-        value: { type: 'backup', preset }
-      }))
+        value: { type: 'backup', preset },
+      })),
     ];
 
     const { selected } = await inquirer.prompt({
       type: 'list',
       name: 'selected',
       message: 'Select preset:',
-      choices
+      choices,
     });
 
     const { action } = await inquirer.prompt({
@@ -355,8 +349,8 @@ export class PromptService {
       choices: [
         { name: 'Use', value: 'use' },
         { name: 'View details', value: 'view' },
-        { name: 'Delete', value: 'delete' }
-      ]
+        { name: 'Delete', value: 'delete' },
+      ],
     });
 
     if (action === 'use') {
@@ -373,7 +367,7 @@ export class PromptService {
         type: 'confirm',
         name: 'confirm',
         message: `Are you sure you want to delete preset "${selected.preset.name}"?`,
-        default: false
+        default: false,
       });
 
       if (confirm) {

@@ -18,10 +18,7 @@ export class SSHService {
     return new Promise((resolve, reject) => {
       // Expand tilde in private key path
 
-      const privateKeyPath = this.config.privateKey.replace(
-        /^~/,
-        process.env.HOME || process.env.USERPROFILE || ''
-      );
+      const privateKeyPath = this.config.privateKey.replace(/^~/, process.env.HOME || process.env.USERPROFILE || '');
       const privateKey = fs.readFileSync(path.resolve(privateKeyPath));
 
       this.client.on('ready', () => {
@@ -39,7 +36,7 @@ export class SSHService {
 
               sock.pipe(stream);
               stream.pipe(sock);
-            }
+            },
           );
         });
 
@@ -57,7 +54,7 @@ export class SSHService {
         port: this.config.port,
         username: this.config.username,
         privateKey,
-        passphrase: this.config.passphrase
+        passphrase: this.config.passphrase,
       });
     });
   }

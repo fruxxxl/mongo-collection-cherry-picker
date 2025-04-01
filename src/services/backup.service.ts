@@ -16,7 +16,7 @@ export class BackupService {
   async createBackup(
     source: ConnectionConfig,
     selectedCollections: string[],
-    excludedCollections: string[]
+    excludedCollections: string[],
   ): Promise<string> {
     try {
       // Create backup directory if it doesn't exist
@@ -87,12 +87,12 @@ export class BackupService {
       if (source.ssh) {
         // For SSH tunnel we need to create mongodump through SSH
         const sshArgs = [
-          `-i`,
+          '-i',
           source.ssh.privateKey,
-          `-p`,
+          '-p',
           source.ssh.port.toString(),
           `${source.ssh.username}@${source.ssh.host}`,
-          `mongodump ${args.join(' ')}`
+          `mongodump ${args.join(' ')}`,
         ];
 
         // Create stream for writing to file
@@ -152,7 +152,7 @@ export class BackupService {
         collections: selectedCollections,
         timestamp,
         date: new Date().toISOString(),
-        archivePath: filename
+        archivePath: filename,
       };
 
       // Save metadata to a file alongside the archive
@@ -206,7 +206,7 @@ export class BackupService {
       path.join(process.cwd(), archivePath),
       path.join(process.cwd(), this.config.backupDir, archivePath),
       // Remove backupDir from path if it already exists
-      archivePath.replace(`${this.config.backupDir}/`, '')
+      archivePath.replace(`${this.config.backupDir}/`, ''),
     ];
 
     // If path starts with ./ or ../, add also the absolute path
@@ -247,11 +247,7 @@ export class BackupService {
     return null;
   }
 
-  async restoreBackup(
-    target: ConnectionConfig,
-    archivePath: string,
-    options: RestoreOptions = {}
-  ): Promise<boolean> {
+  async restoreBackup(target: ConnectionConfig, archivePath: string, options: RestoreOptions = {}): Promise<boolean> {
     try {
       // Check if the archive exists
       console.log(`Full path to backup directory: ${path.resolve(this.config.backupDir)}`);
@@ -273,8 +269,8 @@ export class BackupService {
       const restoreCommand = [
         this.config.mongorestorePath || 'mongorestore',
         `--host=${target.host || 'localhost'}:${target.port || 27017}`,
-        `--gzip`,
-        `--archive=${archivePath}`
+        '--gzip',
+        `--archive=${archivePath}`,
       ];
 
       // If the source and target databases are different, add transformation parameters
@@ -296,9 +292,7 @@ export class BackupService {
         restoreCommand.push(`--username=${target.username}`, `--password=${target.password}`);
 
         if (target.authSource || target.authenticationDatabase) {
-          restoreCommand.push(
-            `--authenticationDatabase=${target.authSource || target.authenticationDatabase}`
-          );
+          restoreCommand.push(`--authenticationDatabase=${target.authSource || target.authenticationDatabase}`);
         }
       }
 
@@ -322,7 +316,7 @@ export class BackupService {
           'done',
           'no indexes to restore',
           'index:',
-          'restoring indexes'
+          'restoring indexes',
         ];
 
         const infoLines = [];
@@ -358,9 +352,7 @@ export class BackupService {
 
       return true;
     } catch (error) {
-      console.error(
-        `Error restoring backup: ${error instanceof Error ? error.message : String(error)}`
-      );
+      console.error(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }

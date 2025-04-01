@@ -13,7 +13,7 @@ export class RestoreService {
   async restoreBackup(
     backupMetadata: BackupMetadata,
     target: ConnectionConfig,
-    options: RestoreOptions
+    options: RestoreOptions,
   ): Promise<boolean> {
     const spinner = ora('Restoring backup...').start();
 
@@ -34,9 +34,7 @@ export class RestoreService {
       spinner.succeed(`Backup restored in ${target.name} (${target.database})`);
       return true;
     } catch (error) {
-      spinner.fail(
-        `Error restoring backup: ${error instanceof Error ? error.message : String(error)}`
-      );
+      spinner.fail(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }

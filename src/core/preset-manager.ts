@@ -40,16 +40,14 @@ export class PresetManager {
         type: 'confirm',
         name: 'useNow',
         message: 'Do you want to use this preset right now?',
-        default: true
+        default: true,
       });
 
       if (useNow) {
         await this.backupManager.useBackupPreset(preset);
       }
     } catch (error) {
-      console.error(
-        `Error creating preset: ${error instanceof Error ? error.message : String(error)}`
-      );
+      console.error(`Error creating preset: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -57,9 +55,7 @@ export class PresetManager {
     // Add debug output
     console.log(`DEBUG: Config contains ${this.config.backupPresets?.length || 0} backup presets`);
     if (this.config.backupPresets) {
-      console.log(
-        `Backup presets: ${JSON.stringify(this.config.backupPresets.map((p: any) => p.name))}`
-      );
+      console.log(`Backup presets: ${JSON.stringify(this.config.backupPresets.map((p: any) => p.name))}`);
     }
 
     // Check for presets
@@ -82,9 +78,7 @@ export class PresetManager {
         }
       }
     } catch (error) {
-      console.error(
-        `Error managing presets: ${error instanceof Error ? error.message : String(error)}`
-      );
+      console.error(`Error managing presets: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

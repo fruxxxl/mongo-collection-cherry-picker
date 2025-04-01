@@ -8,7 +8,7 @@ export const SSHConfigSchema = z.object({
   passphrase: z.string().optional(),
   localPort: z.number(),
   remoteHost: z.string(),
-  remotePort: z.number().default(27017)
+  remotePort: z.number().default(27017),
 });
 
 export const ConnectionConfigSchema = z.object({
@@ -20,7 +20,7 @@ export const ConnectionConfigSchema = z.object({
   username: z.string().optional(),
   password: z.string().optional(),
   authenticationDatabase: z.string().optional(),
-  ssh: SSHConfigSchema.optional()
+  ssh: SSHConfigSchema.optional(),
 });
 
 export const BackupPresetSchema = z.object({
@@ -29,7 +29,7 @@ export const BackupPresetSchema = z.object({
   description: z.string().optional(),
   selectionMode: z.enum(['all', 'include', 'exclude']),
   collections: z.array(z.string()).optional(),
-  createdAt: z.string()
+  createdAt: z.string(),
 });
 
 export const AppConfigSchema = z.object({
@@ -38,5 +38,5 @@ export const AppConfigSchema = z.object({
   connections: z.array(ConnectionConfigSchema),
   mongodumpPath: z.string().optional().default('mongodump'),
   mongorestorePath: z.string().optional().default('mongorestore'),
-  backupPresets: z.array(BackupPresetSchema).optional()
+  backupPresets: z.array(BackupPresetSchema).optional(),
 });

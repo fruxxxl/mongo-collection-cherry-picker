@@ -23,12 +23,10 @@ export class BackupManager {
   async runBackup(
     sourceName: string,
     mode: 'all' | 'include' | 'exclude',
-    collectionsList: string[] = []
+    collectionsList: string[] = [],
   ): Promise<string> {
     // Find connection by name
-    const sourceConfig = this.config.connections.find(
-      (conn: ConnectionConfig) => conn.name === sourceName
-    );
+    const sourceConfig = this.config.connections.find((conn: ConnectionConfig) => conn.name === sourceName);
     if (!sourceConfig) {
       throw new Error(`Connection "${sourceName}" not found in configuration`);
     }
@@ -51,17 +49,11 @@ export class BackupManager {
       includedCollections = collectionsList;
     } else if (mode === 'exclude') {
       excludedCollections = collectionsList;
-      includedCollections = allCollections.filter(
-        (col: string) => !excludedCollections.includes(col)
-      );
+      includedCollections = allCollections.filter((col: string) => !excludedCollections.includes(col));
     }
 
     // Create backup
-    const backupPath = await this.backupService.createBackup(
-      sourceConfig,
-      includedCollections,
-      excludedCollections
-    );
+    const backupPath = await this.backupService.createBackup(sourceConfig, includedCollections, excludedCollections);
 
     console.log(`Backup successfully created: ${backupPath}`);
     return backupPath;
@@ -69,8 +61,7 @@ export class BackupManager {
 
   async backupDatabase(): Promise<void> {
     // Use PromptService for interactive selection
-    const { source, selectedCollections, excludedCollections } =
-      await this.promptService.promptForBackup();
+    const { source, selectedCollections, excludedCollections } = await this.promptService.promptForBackup();
 
     // Connect to MongoDB and get collection list
     const spinner = ora('Connecting to database...').start();
@@ -87,11 +78,7 @@ export class BackupManager {
 
       // Create backup
       spinner.start('Creating backup...');
-      const backupPath = await this.backupService.createBackup(
-        source,
-        selectedCollections,
-        excludedCollections
-      );
+      const backupPath = await this.backupService.createBackup(source, selectedCollections, excludedCollections);
       spinner.succeed(`Backup successfully created: ${backupPath}`);
 
       // Suggest to restore backup to another database
@@ -99,15 +86,12 @@ export class BackupManager {
         type: 'confirm',
         name: 'restore',
         message: 'Do you want to restore backup to another database?',
-        default: false
+        default: false,
       });
 
       if (restore) {
         const backupMetadata = this.backupService.loadBackupMetadata(backupPath);
-        const { target, options } = await this.promptService.promptForRestoreTarget(
-          backupMetadata,
-          source
-        );
+        const { target, options } = await this.promptService.promptForRestoreTarget(backupMetadata, source);
         const restoreService = new RestoreService(this.config);
 
         await restoreService.restoreBackup(backupMetadata, target, options);
@@ -122,9 +106,7 @@ export class BackupManager {
   }
 
   async useBackupPreset(preset: any): Promise<void> {
-    const source = this.config.connections.find(
-      (conn: ConnectionConfig) => conn.name === preset.sourceName
-    );
+    const source = this.config.connections.find((conn: ConnectionConfig) => conn.name === preset.sourceName);
 
     if (!source) {
       throw new Error(`Source "${preset.sourceName}" not found in configuration`);
@@ -151,9 +133,7 @@ export class BackupManager {
       const allCollections = await this.mongoService.getCollections(source.database);
       await this.mongoService.close();
 
-      selectedCollections = allCollections.filter(
-        (coll: string) => !excludedCollections.includes(coll)
-      );
+      selectedCollections = allCollections.filter((coll: string) => !excludedCollections.includes(coll));
     }
 
     // Формируем имя файла на основе шаблона из конфигурации
@@ -168,8 +148,8 @@ export class BackupManager {
     const commandArgs = [
       `--host=${source.host || 'localhost'}:${source.port || 27017}`,
       `--db=${source.database}`,
-      `--gzip`,
-      `--archive=${archivePath}`
+      '--gzip',
+      `--archive=${archivePath}`,
     ];
 
     if (preset.selectionMode === 'exclude') {
@@ -193,9 +173,7 @@ export class BackupManager {
       commandArgs.push(`--password=${source.password}`);
 
       if (source.authSource || source.authenticationDatabase) {
-        commandArgs.push(
-          `--authenticationDatabase=${source.authSource || source.authenticationDatabase}`
-        );
+        commandArgs.push(`--authenticationDatabase=${source.authSource || source.authenticationDatabase}`);
       }
     }
 
@@ -206,7 +184,7 @@ export class BackupManager {
       type: 'confirm',
       name: 'confirm',
       message: 'Confirm command execution:',
-      default: true
+      default: true,
     });
 
     if (confirm) {
@@ -216,16 +194,10 @@ export class BackupManager {
         spinner.text = 'Running mongodump...';
         // Обратите внимание, что здесь мы все еще используем createBackup
         // который может использовать другой формат команды внутренне
-        const backupPath = await this.backupService.createBackup(
-          source,
-          selectedCollections,
-          excludedCollections
-        );
+        const backupPath = await this.backupService.createBackup(source, selectedCollections, excludedCollections);
         spinner.succeed(`Backup successfully created: ${backupPath}`);
       } catch (error) {
-        spinner.fail(
-          `Error creating backup: ${error instanceof Error ? error.message : String(error)}`
-        );
+        spinner.fail(`Error creating backup: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }

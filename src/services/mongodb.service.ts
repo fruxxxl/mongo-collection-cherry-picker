@@ -18,9 +18,7 @@ export class MongoDBService {
         uri = connectionConfig.uri;
       } else if (connectionConfig.hosts && connectionConfig.hosts.length > 0) {
         // build uri for replica set
-        const hostsStr = connectionConfig.hosts
-          .map((h) => `${h.host}${h.port ? ':' + h.port : ''}`)
-          .join(',');
+        const hostsStr = connectionConfig.hosts.map((h) => `${h.host}${h.port ? ':' + h.port : ''}`).join(',');
 
         // create auth string if credentials are provided
         const authStr =

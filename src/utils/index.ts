@@ -94,14 +94,12 @@ export function parseCommandLineArgs(): {
     collections,
     backupFile,
     target,
-    interactive
+    interactive,
   };
 }
 
 export function loadConfig(customConfigPath?: string): AppConfig {
-  const { configPath } = customConfigPath
-    ? { configPath: customConfigPath }
-    : parseCommandLineArgs();
+  const { configPath } = customConfigPath ? { configPath: customConfigPath } : parseCommandLineArgs();
 
   if (!fs.existsSync(configPath)) {
     throw new Error(`Configuration file not found: ${configPath}`);
@@ -120,9 +118,7 @@ export function loadConfig(customConfigPath?: string): AppConfig {
     console.log(`After validation: backup=${validatedConfig.backupPresets?.length || 0}`);
     return validatedConfig;
   } catch (error) {
-    throw new Error(
-      `Invalid configuration file format: ${error instanceof Error ? error.message : String(error)}`
-    );
+    throw new Error(`Invalid configuration file format: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -133,7 +129,7 @@ export function formatDate(date: Date): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
   });
 }
 
