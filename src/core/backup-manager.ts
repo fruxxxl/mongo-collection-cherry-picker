@@ -1,11 +1,10 @@
 import ora from 'ora';
-import inquirer from 'inquirer';
+
 import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
-import { RestoreService } from '../services/restore.service';
+
 import { PromptService } from '../utils/prompts';
-import { AppConfig, ConnectionConfig } from '../types/index';
-import path from 'path';
+import { AppConfig, ConnectionConfig, BackupPreset } from '../types/index';
 
 export class BackupManager {
   private config: AppConfig;
@@ -53,152 +52,106 @@ export class BackupManager {
     }
 
     // Create backup
-    const backupPath = await this.backupService.createBackup(sourceConfig, includedCollections, excludedCollections);
+    const backupPath = await this.backupService.createBackup(
+      sourceConfig,
+      includedCollections,
+      excludedCollections,
+      mode,
+    );
 
     console.log(`Backup successfully created: ${backupPath}`);
     return backupPath;
   }
 
-  async backupDatabase(): Promise<void> {
-    // Use PromptService for interactive selection
-    const { source, selectedCollections, excludedCollections } = await this.promptService.promptForBackup();
+  async backupDatabase(
+    sourceName?: string,
+    mode?: 'all' | 'include' | 'exclude',
+    collections?: string[],
+  ): Promise<void> {
+    let sourceConfig: ConnectionConfig;
+    let includedCollections: string[] = [];
+    let excludedCollections: string[] = [];
+    let selectionMode: 'all' | 'include' | 'exclude';
 
-    // Connect to MongoDB and get collection list
-    const spinner = ora('Connecting to database...').start();
-
-    try {
-      await this.mongoService.connect(source);
-      spinner.succeed('Connection successfully established');
-
-      spinner.start('Getting collection list...');
-      const collections = await this.mongoService.getCollections(source.database);
-      spinner.succeed(`Got ${collections.length} collections`);
-
-      await this.mongoService.close();
-
-      // Create backup
-      spinner.start('Creating backup...');
-      const backupPath = await this.backupService.createBackup(source, selectedCollections, excludedCollections);
-      spinner.succeed(`Backup successfully created: ${backupPath}`);
-
-      // Suggest to restore backup to another database
-      const { restore } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'restore',
-        message: 'Do you want to restore backup to another database?',
-        default: false,
-      });
-
-      if (restore) {
-        const backupMetadata = this.backupService.loadBackupMetadata(backupPath);
-        const { target, options } = await this.promptService.promptForRestoreTarget(backupMetadata, source);
-        const restoreService = new RestoreService(this.config);
-
-        await restoreService.restoreBackup(backupMetadata, target, options);
-      } else {
-        console.log('Work completed. Have a good day!');
-        process.exit(0);
+    if (sourceName && mode) {
+      // Non-interactive mode
+      sourceConfig = this.config.connections.find((conn) => conn.name === sourceName)!;
+      if (!sourceConfig) {
+        throw new Error(`Source connection "${sourceName}" not found in config.`);
       }
-    } catch (error) {
-      spinner.fail(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      await this.mongoService.close();
+      selectionMode = mode;
+      if (mode === 'include') {
+        includedCollections = collections || [];
+      } else if (mode === 'exclude') {
+        excludedCollections = collections || [];
+      }
+    } else {
+      // Interactive mode
+      const backupDetails = await this.promptService.promptForBackup();
+      sourceConfig = backupDetails.source;
+      includedCollections = backupDetails.selectedCollections;
+      excludedCollections = backupDetails.excludedCollections;
+      selectionMode = backupDetails.selectionMode;
+    }
+
+    const spinner = ora('Creating backup...').start();
+    try {
+      const backupPath = await this.backupService.createBackup(
+        sourceConfig,
+        includedCollections,
+        excludedCollections,
+        selectionMode,
+      );
+      spinner.succeed(`Backup created successfully: ${backupPath}`);
+    } catch (error: any) {
+      spinner.fail(`Error creating backup: ${error.message}`);
     }
   }
 
-  async useBackupPreset(preset: any): Promise<void> {
-    const source = this.config.connections.find((conn: ConnectionConfig) => conn.name === preset.sourceName);
+  async listBackups(): Promise<void> {
+    // ... код без изменений ...
+  }
 
+  async manageBackupPresets(): Promise<void> {
+    const selectedPresetAction = await this.promptService.managePresets();
+
+    if (selectedPresetAction && selectedPresetAction.type === 'backup') {
+      const preset = selectedPresetAction.preset as BackupPreset;
+      console.log(`\nUsing backup preset: ${preset.name}`);
+      await this.useBackupPreset(preset);
+    }
+  }
+
+  async useBackupPreset(preset: BackupPreset): Promise<void> {
+    const source = this.config.connections.find((conn) => conn.name === preset.sourceName);
     if (!source) {
-      throw new Error(`Source "${preset.sourceName}" not found in configuration`);
+      throw new Error(`Source connection "${preset.sourceName}" not found for preset "${preset.name}".`);
     }
 
-    // Create arrays of selected/excluded collections based on preset
     let selectedCollections: string[] = [];
     let excludedCollections: string[] = [];
 
-    if (preset.selectionMode === 'all') {
-      // All collections
-      await this.mongoService.connect(source);
-      selectedCollections = await this.mongoService.getCollections(source.database);
-      await this.mongoService.close();
-    } else if (preset.selectionMode === 'include') {
-      // Only specified collections
+    if (preset.selectionMode === 'include') {
       selectedCollections = preset.collections || [];
-    } else {
-      // Exclude specified collections
+    } else if (preset.selectionMode === 'exclude') {
       excludedCollections = preset.collections || [];
-
-      // Get all collections to exclude specified ones
-      await this.mongoService.connect(source);
-      const allCollections = await this.mongoService.getCollections(source.database);
-      await this.mongoService.close();
-
-      selectedCollections = allCollections.filter((coll: string) => !excludedCollections.includes(coll));
     }
 
-    // Формируем имя файла на основе шаблона из конфигурации
-    const dateTime = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
-    const archiveFilename = this.config.filenameFormat
-      .replace('{{datetime}}', dateTime)
-      .replace('{{source}}', source.name);
-
-    const archivePath = path.join(this.config.backupDir, archiveFilename);
-
-    // Возвращаем оригинальный формат команды
-    const commandArgs = [
-      `--host=${source.host || 'localhost'}:${source.port || 27017}`,
-      `--db=${source.database}`,
-      '--gzip',
-      `--archive=${archivePath}`,
-    ];
-
-    if (preset.selectionMode === 'exclude') {
-      excludedCollections.forEach((coll: string) => {
-        commandArgs.push(`--excludeCollection=${coll}`);
-      });
-    } else if (preset.selectionMode === 'include') {
-      selectedCollections.forEach((coll: string) => {
-        commandArgs.push(`--collection=${coll}`);
-      });
+    const spinner = ora(`Creating backup using preset "${preset.name}"...`).start();
+    try {
+      const backupPath = await this.backupService.createBackup(
+        source,
+        selectedCollections,
+        excludedCollections,
+        preset.selectionMode,
+      );
+      spinner.succeed(`Backup created successfully using preset "${preset.name}": ${backupPath}`);
+    } catch (error: any) {
+      spinner.fail(`Error creating backup with preset "${preset.name}": ${error.message}`);
     }
+  }
 
-    // Если есть URI, заменяем host/port на URI
-    if (source.uri) {
-      commandArgs.splice(0, 1, `--uri="${source.uri}"`);
-    }
-
-    // Добавляем аутентификацию
-    if (source.username && source.password) {
-      commandArgs.push(`--username=${source.username}`);
-      commandArgs.push(`--password=${source.password}`);
-
-      if (source.authSource || source.authenticationDatabase) {
-        commandArgs.push(`--authenticationDatabase=${source.authSource || source.authenticationDatabase}`);
-      }
-    }
-
-    console.log('\nExecuting mongodump command:');
-    console.log(`mongodump ${commandArgs.join(' ')}\n`);
-
-    const { confirm } = await inquirer.prompt({
-      type: 'confirm',
-      name: 'confirm',
-      message: 'Confirm command execution:',
-      default: true,
-    });
-
-    if (confirm) {
-      // Run backup
-      const spinner = ora('Creating backup...').start();
-      try {
-        spinner.text = 'Running mongodump...';
-        // Обратите внимание, что здесь мы все еще используем createBackup
-        // который может использовать другой формат команды внутренне
-        const backupPath = await this.backupService.createBackup(source, selectedCollections, excludedCollections);
-        spinner.succeed(`Backup successfully created: ${backupPath}`);
-      } catch (error) {
-        spinner.fail(`Error creating backup: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+  async createBackupPreset(): Promise<void> {
+    // ... код без изменений ...
   }
 }

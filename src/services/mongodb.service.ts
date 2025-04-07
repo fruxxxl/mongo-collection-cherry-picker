@@ -1,114 +1,358 @@
-import { MongoClient } from 'mongodb';
-import { AppConfig, ConnectionConfig } from '../types/index';
+import { MongoClient, Db } from 'mongodb';
+import { AppConfig, ConnectionConfig, SSHConfig } from '../types/index';
+import { createTunnel } from 'tunnel-ssh';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { URLSearchParams } from 'url';
+
+function parseMongoUri(uri: string): {
+  user?: string;
+  password?: string;
+  hosts: { host: string; port: number }[];
+  database?: string;
+  options: Record<string, string>;
+} {
+  const mongoUriRegex = /^mongodb:\/\/(?:([^:]+)(?::([^@]+))?@)?([^/?]+)(?:\/([^?]+))?(?:\?(.+))?$/;
+  let match = uri.match(mongoUriRegex);
+
+  if (!match) {
+    const uriWithSlash = uri.includes('?') && !uri.includes('/?') ? uri.replace('?', '/?') : uri;
+    const fallbackMatch = uriWithSlash.match(mongoUriRegex);
+    if (!fallbackMatch) {
+      console.error('Failed to parse URI with regex:', uri);
+      throw new Error('Invalid MongoDB URI format');
+    }
+    console.warn('Parsed URI using fallback with added slash.');
+    match = fallbackMatch;
+  }
+
+  const [, user, password, hostString, database, optionString] = match!;
+
+  const hosts = hostString.split(',').map((hostPort) => {
+    const parts = hostPort.split(':');
+    const host = parts[0];
+    const port = parseInt(parts[1] || '27017', 10);
+    if (isNaN(port)) {
+      throw new Error(`Invalid port number in host string: ${hostPort}`);
+    }
+    return { host, port };
+  });
+
+  const options: Record<string, string> = {};
+  if (optionString) {
+    const params = new URLSearchParams(optionString);
+    params.forEach((value, key) => {
+      options[key] = value;
+    });
+  }
+
+  return {
+    user: user ? decodeURIComponent(user) : undefined,
+    password: password ? decodeURIComponent(password) : undefined,
+    hosts,
+    database: database ? database.split('/')[0] : undefined,
+    options,
+  };
+}
 
 export class MongoDBService {
   private config: AppConfig;
   private client: MongoClient | null = null;
+  private sshTunnelServer: any | null = null;
 
   constructor(config: AppConfig) {
     this.config = config;
   }
 
   async connect(connectionConfig: ConnectionConfig): Promise<MongoClient> {
+    if (this.client) {
+      console.warn(`[${connectionConfig.name}] Already connected. Closing existing connection before reconnecting.`);
+      await this.close();
+    }
+
     try {
-      let uri: string;
+      if (connectionConfig.ssh) {
+        this.client = await this.connectWithTunnel(connectionConfig);
+        console.log(`[${connectionConfig.name}] Connection successfully established via SSH tunnel.`);
+      } else {
+        const uri = this.buildMongoUri(connectionConfig);
+        console.log(
+          `[${connectionConfig.name}] Connecting directly to MongoDB with URI: ${uri.replace(/:([^:@\/]+)@/, ':<password>@')}`,
+        );
+        this.client = await MongoClient.connect(uri);
+        console.log(`[${connectionConfig.name}] Direct connection successfully established.`);
+      }
+      return this.client;
+    } catch (error: any) {
+      console.error(`[${connectionConfig.name}] Connection failed in connect method:`, error);
+      if (this.sshTunnelServer) {
+        console.error(`[${connectionConfig.name}] Closing SSH tunnel due to connection error.`);
+        this.sshTunnelServer.close();
+        this.sshTunnelServer = null;
+      }
+      this.client = null;
+      throw new Error(`[${connectionConfig.name}] Error connecting: ${error.message || error}`);
+    }
+  }
 
-      if (connectionConfig.uri) {
-        // use provided uri if it exists
-        uri = connectionConfig.uri;
-      } else if (connectionConfig.hosts && connectionConfig.hosts.length > 0) {
-        // build uri for replica set
-        const hostsStr = connectionConfig.hosts.map((h) => `${h.host}${h.port ? ':' + h.port : ''}`).join(',');
+  private buildMongoUri(config: ConnectionConfig): string {
+    if (config.uri) {
+      return config.uri;
+    }
 
-        // create auth string if credentials are provided
-        const authStr =
-          connectionConfig.username && connectionConfig.password
-            ? `${encodeURIComponent(connectionConfig.username)}:${encodeURIComponent(connectionConfig.password)}@`
-            : '';
+    let hostsStr: string;
+    if (config.hosts && config.hosts.length > 0) {
+      hostsStr = config.hosts.map((h) => `${h.host}${h.port ? ':' + h.port : ''}`).join(',');
+    } else if (config.host) {
+      hostsStr = config.host
+        .split(',')
+        .map((h) => {
+          const trimmedHost = h.trim();
+          if (config.port && !trimmedHost.includes(':')) {
+            return `${trimmedHost}:${config.port}`;
+          }
+          return trimmedHost;
+        })
+        .join(',');
+    } else {
+      throw new Error(`[${config.name}] Connection must have either 'uri', 'hosts', or 'host' defined.`);
+    }
 
-        // create options string
-        let optionsStr = '';
+    if (!config.database) {
+      throw new Error(`[${config.name}] Connection must have 'database' defined.`);
+    }
 
-        // add authSource if it is specified
-        if (connectionConfig.authDatabase || connectionConfig.authenticationDatabase) {
-          optionsStr += `authSource=${connectionConfig.authDatabase || connectionConfig.authenticationDatabase}`;
-        }
+    const authStr =
+      config.username && config.password
+        ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@`
+        : '';
 
-        // add replica set name if it is specified
-        if (connectionConfig.replicaSet) {
-          optionsStr += optionsStr ? '&' : '';
-          optionsStr += `replicaSet=${connectionConfig.replicaSet}`;
-        }
+    const queryParams: Record<string, string> = {};
 
-        // add additional options if they are specified
-        if (connectionConfig.options) {
-          for (const [key, value] of Object.entries(connectionConfig.options)) {
-            optionsStr += optionsStr ? '&' : '';
-            optionsStr += `${key}=${value}`;
+    const authSource = config.authSource || config.authenticationDatabase || config.authDatabase;
+    if (authSource) {
+      queryParams['authSource'] = authSource;
+    }
+
+    if (config.replicaSet) {
+      queryParams['replicaSet'] = config.replicaSet;
+    }
+
+    if (config.options) {
+      for (const [key, value] of Object.entries(config.options)) {
+        if (value !== null && value !== undefined) {
+          if (key !== 'replicaSet' || !queryParams['replicaSet']) {
+            queryParams[key] = String(value);
           }
         }
-
-        // build full uri
-        uri = `mongodb://${authStr}${hostsStr}/${connectionConfig.database}${optionsStr ? '?' + optionsStr : ''}`;
-      } else if (connectionConfig.host && connectionConfig.host.includes(',')) {
-        // handle case when host contains multiple hosts separated by comma
-        const hosts = connectionConfig.host.split(',').map((h) => h.trim());
-
-        // create hosts string
-        const hostsStr = hosts.join(',');
-
-        // create auth string
-        const authStr =
-          connectionConfig.username && connectionConfig.password
-            ? `${encodeURIComponent(connectionConfig.username)}:${encodeURIComponent(connectionConfig.password)}@`
-            : '';
-
-        // create options string
-        let optionsStr = '';
-
-        // add authSource
-        if (connectionConfig.authenticationDatabase || connectionConfig.authDatabase) {
-          optionsStr += `authSource=${connectionConfig.authenticationDatabase || connectionConfig.authDatabase}`;
-        }
-
-        // build full uri
-        uri = `mongodb://${authStr}${hostsStr}/${connectionConfig.database}${optionsStr ? '?' + optionsStr : ''}`;
-      } else {
-        // standard case with one host and port
-        uri = `mongodb://${connectionConfig.host}:${connectionConfig.port}/${connectionConfig.database}`;
       }
+    }
 
-      console.log(`Connecting to MongoDB with URI: ${uri.replace(/:[^:\/]+@/, ':***@')}`); // hide password in logs
+    const optionsStr = Object.entries(queryParams)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .join('&');
 
-      this.client = await MongoClient.connect(uri);
-      console.log(`Connection successfully established to ${connectionConfig.name}`);
-      return this.client;
-    } catch (error) {
-      console.error(`Error connecting to ${connectionConfig.name}: ${error}`);
-      throw error;
+    return `mongodb://${authStr}${hostsStr}/${config.database}${optionsStr ? '?' + optionsStr : ''}`;
+  }
+
+  private async connectWithTunnel(config: ConnectionConfig): Promise<MongoClient> {
+    if (!config.ssh) {
+      throw new Error(`[${config.name}] SSH configuration is missing for tunnel connection.`);
+    }
+    console.log(`[${config.name}] Setting up SSH tunnel...`);
+
+    const sshConf: SSHConfig = config.ssh!;
+
+    const privateKeyPath = sshConf.privateKey.startsWith('~')
+      ? path.join(os.homedir(), sshConf.privateKey.substring(1))
+      : sshConf.privateKey;
+
+    let privateKeyContent: string;
+    try {
+      privateKeyContent = fs.readFileSync(privateKeyPath, 'utf-8');
+    } catch (err: any) {
+      throw new Error(`[${config.name}] Failed to read private key at ${privateKeyPath}: ${err.message}`);
+    }
+
+    let targetHost: string;
+    let targetPort: number;
+    let parsedUriAuth: { user?: string; password?: string; authSource?: string } = {};
+
+    if (config.uri) {
+      try {
+        const parsedUri = parseMongoUri(config.uri);
+        if (!parsedUri.hosts || parsedUri.hosts.length === 0) {
+          throw new Error('Could not parse target host/port from URI.');
+        }
+        targetHost = parsedUri.hosts[0].host;
+        targetPort = parsedUri.hosts[0].port;
+        parsedUriAuth = {
+          user: parsedUri.user,
+          password: parsedUri.password,
+          authSource: parsedUri.options.authSource,
+        };
+      } catch (e: any) {
+        throw new Error(
+          `[${config.name}] Failed to parse target host/port from provided URI (${config.uri}): ${e.message}`,
+        );
+      }
+    } else if (config.hosts && config.hosts.length > 0) {
+      targetHost = config.hosts[0].host;
+      targetPort = config.hosts[0].port || 27017;
+      parsedUriAuth = {
+        user: config.username,
+        password: config.password,
+        authSource: config.authSource || config.authenticationDatabase || config.authDatabase,
+      };
+    } else if (config.host) {
+      const firstHost = config.host.split(',')[0].trim();
+      const hostParts = firstHost.split(':');
+      targetHost = hostParts[0];
+      targetPort = parseInt(hostParts[1] || String(config.port || '27017'), 10);
+      parsedUriAuth = {
+        user: config.username,
+        password: config.password,
+        authSource: config.authSource || config.authenticationDatabase || config.authDatabase,
+      };
+    } else {
+      throw new Error(
+        `[${config.name}] Cannot determine target MongoDB host/port for SSH tunnel. Provide 'uri', 'hosts', or 'host' in the connection config.`,
+      );
+    }
+
+    const tunnelOptions = {
+      autoClose: true,
+      reconnectOnError: false,
+    };
+
+    const sshConnectionConfig = {
+      host: sshConf.host,
+      port: sshConf.port || 22,
+      username: sshConf.username,
+      privateKey: privateKeyContent,
+      passphrase: sshConf.passphrase,
+    };
+
+    const serverPort = 0;
+
+    const forwardOptions = {
+      srcAddr: '127.0.0.1',
+      srcPort: serverPort,
+      dstAddr: targetHost,
+      dstPort: targetPort,
+    };
+
+    try {
+      console.log(
+        `[${config.name}] Creating tunnel: localhost:<auto> -> ${sshConf.host}:${sshConf.port || 22} -> ${targetHost}:${targetPort}`,
+      );
+      const [serverInstance] = await createTunnel(tunnelOptions, {}, sshConnectionConfig, forwardOptions);
+      this.sshTunnelServer = serverInstance;
+
+      const address = this.sshTunnelServer.address();
+      if (!address || typeof address === 'string' || !address.port) {
+        throw new Error('Could not determine local port for tunnel');
+      }
+      const localPort = address.port;
+      console.log(
+        `[${config.name}] SSH tunnel established! Forwarding localhost:${localPort} -> ${targetHost}:${targetPort}`,
+      );
+
+      const originalOptionsFiltered = Object.fromEntries(
+        Object.entries(config.options || {}).filter(([key]) => key !== 'replicaSet'),
+      );
+
+      const localUriConfig: ConnectionConfig = {
+        name: config.name,
+        database: config.database,
+        username: parsedUriAuth.user ?? config.username,
+        password: parsedUriAuth.password ?? config.password,
+        authSource:
+          parsedUriAuth.authSource ?? config.authSource ?? config.authenticationDatabase ?? config.authDatabase,
+        host: 'localhost',
+        port: localPort,
+        uri: undefined,
+        hosts: undefined,
+        replicaSet: undefined,
+        ssh: undefined,
+        options: {
+          ...originalOptionsFiltered,
+          directConnection: 'true',
+        },
+      };
+
+      const localUri = this.buildMongoUri(localUriConfig);
+
+      console.log(
+        `[${config.name}] Connecting to MongoDB via tunnel: ${localUri.replace(/:([^:@\/]+)@/, ':<password>@')}`,
+      );
+
+      const client = await MongoClient.connect(localUri);
+      return client;
+    } catch (error: any) {
+      console.error(`[${config.name}] SSH tunnel or MongoDB connection failed:`, error);
+      if (this.sshTunnelServer) {
+        this.sshTunnelServer.close();
+        this.sshTunnelServer = null;
+      }
+      throw new Error(`[${config.name}] SSH tunnel or MongoDB connection failed: ${error.message || error}`);
     }
   }
 
   async getCollections(databaseName: string): Promise<string[]> {
     if (!this.client) {
-      throw new Error('First, you need to connect to MongoDB');
+      throw new Error('Not connected to MongoDB. Call connect() first.');
     }
 
     try {
-      const db = this.client.db(databaseName);
+      const db: Db = this.client.db(databaseName);
       const collections = await db.listCollections().toArray();
       return collections.map((coll) => coll.name);
-    } catch (error) {
-      console.error(`Error getting collection list: ${error}`);
-      throw error;
+    } catch (error: any) {
+      console.error(`Error getting collection list for database "${databaseName}":`, error);
+      throw new Error(`Error getting collection list for database "${databaseName}": ${error.message || error}`);
     }
   }
 
   async close(): Promise<void> {
     if (this.client) {
-      await this.client.close();
-      this.client = null;
-      console.log('MongoDB connection closed');
+      try {
+        await this.client.close();
+        console.log('MongoDB connection closed.');
+      } catch (error: any) {
+        console.error(`Error closing MongoDB connection: ${error.message}`);
+      } finally {
+        this.client = null;
+      }
     }
+
+    if (this.sshTunnelServer) {
+      console.log('Closing SSH tunnel...');
+      try {
+        if (typeof this.sshTunnelServer.close === 'function') {
+          this.sshTunnelServer.close();
+          console.log('SSH tunnel closed.');
+        } else {
+          console.warn('SSH tunnel server does not have a close method.');
+        }
+      } catch (error: any) {
+        console.error(`Error closing SSH tunnel: ${error.message}`);
+      } finally {
+        this.sshTunnelServer = null;
+      }
+    }
+  }
+
+  getClient(): MongoClient | null {
+    return this.client;
+  }
+
+  getDb(databaseName: string): Db {
+    if (!this.client) {
+      throw new Error('Not connected to MongoDB. Call connect() first.');
+    }
+    return this.client.db(databaseName);
   }
 }

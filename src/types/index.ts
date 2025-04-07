@@ -4,9 +4,6 @@ export interface SSHConfig {
   username: string;
   privateKey: string;
   passphrase?: string;
-  localPort: number;
-  remoteHost: string;
-  remotePort: number;
 }
 
 export interface ConnectionConfig {
@@ -57,12 +54,29 @@ export interface AppConfig {
   backupPresets?: BackupPreset[];
 }
 
+/**
+ * Represents the metadata associated with a backup archive.
+ * Stored in a .json file alongside the .gz archive.
+ */
 export interface BackupMetadata {
+  /** The name of the source connection used for the backup. */
   source: string;
-  database: string;
-  collections: string[];
+  /** The name of the database that was backed up. */
+  database?: string;
+  /**
+   * List of collection names explicitly included in the backup.
+   * Relevant when selectionMode is 'include'. May be empty if selectionMode is 'all' or 'exclude'.
+   */
+  includedCollections: string[];
+  /** The selection mode used during backup ('all', 'include', 'exclude'). */
+  selectionMode: 'all' | 'include' | 'exclude';
+  /** List of collections explicitly excluded (only relevant if selectionMode is 'exclude'). */
+  excludedCollections?: string[];
+  /** Unix timestamp (milliseconds) when the backup was created. */
   timestamp: number;
+  /** ISO 8601 string representation of the backup creation date/time. */
   date: string;
+  /** The relative path/filename of the backup archive within the backup directory. */
   archivePath: string;
 }
 

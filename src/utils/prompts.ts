@@ -12,14 +12,15 @@ export class PromptService {
 
   constructor(config: AppConfig) {
     this.config = config;
-    this.backupService = new BackupService(config);
     this.mongoService = new MongoDBService(config);
+    this.backupService = new BackupService(config);
   }
 
   async promptForBackup(): Promise<{
     source: ConnectionConfig;
     selectedCollections: string[];
     excludedCollections: string[];
+    selectionMode: 'all' | 'include' | 'exclude';
   }> {
     // Show available connections
     const { sourceIndex } = await inquirer.prompt({
@@ -42,7 +43,7 @@ export class PromptService {
 
       if (collections.length === 0) {
         console.log('No collections found in database');
-        return { source, selectedCollections: [], excludedCollections: [] };
+        return { source, selectedCollections: [], excludedCollections: [], selectionMode: 'all' };
       }
 
       // Ask which collections to include
@@ -55,8 +56,10 @@ export class PromptService {
 
       let selectedCollections: string[] = [];
       let excludedCollections: string[] = [];
+      let selectionMode: 'all' | 'include' | 'exclude';
 
       if (!allCollections) {
+        selectionMode = 'include';
         const { selected } = await inquirer.prompt({
           type: 'checkbox',
           name: 'selected',
@@ -69,7 +72,6 @@ export class PromptService {
         });
         selectedCollections = selected;
       } else {
-        // Optionally ask which collections to exclude
         const { excluded } = await inquirer.prompt({
           type: 'checkbox',
           name: 'excluded',
@@ -80,9 +82,10 @@ export class PromptService {
           })),
         });
         excludedCollections = excluded;
+        selectionMode = excludedCollections.length > 0 ? 'exclude' : 'all';
       }
 
-      return { source, selectedCollections, excludedCollections };
+      return { source, selectedCollections, excludedCollections, selectionMode };
     } catch (error) {
       console.error(`Error getting collection list: ${error}`);
       // Allow user to enter collections manually if unable to get them
@@ -93,7 +96,13 @@ export class PromptService {
       });
 
       const selectedCollections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
-      return { source, selectedCollections, excludedCollections: [] };
+      const selectionMode = selectedCollections.length > 0 ? 'include' : 'all';
+      return { source, selectedCollections, excludedCollections: [], selectionMode };
+    } finally {
+      if (this.mongoService.getClient()) {
+        await this.mongoService.close();
+        console.log(`[${source.name}] Connection closed after fetching collections.`);
+      }
     }
   }
 

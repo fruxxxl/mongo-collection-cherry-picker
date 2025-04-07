@@ -6,9 +6,6 @@ export const SSHConfigSchema = z.object({
   username: z.string(),
   privateKey: z.string(),
   passphrase: z.string().optional(),
-  localPort: z.number(),
-  remoteHost: z.string(),
-  remotePort: z.number().default(27017),
 });
 
 export const ConnectionConfigSchema = z.object({

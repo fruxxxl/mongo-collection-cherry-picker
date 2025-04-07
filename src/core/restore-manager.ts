@@ -17,9 +17,9 @@ export class RestoreManager {
 
   constructor(config: AppConfig) {
     this.config = config;
+    this.restoreService = new RestoreService(config);
     this.mongoService = new MongoDBService(config);
     this.backupService = new BackupService(config);
-    this.restoreService = new RestoreService(config);
     this.promptService = new PromptService(config);
   }
 
