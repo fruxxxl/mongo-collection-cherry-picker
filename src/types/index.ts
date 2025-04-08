@@ -55,29 +55,28 @@ export interface AppConfig {
 }
 
 /**
- * Represents the metadata associated with a backup archive.
- * Stored in a .json file alongside the .gz archive.
+ * Represents the metadata stored alongside a backup archive.
+ * Contains information about the source, creation time, and filtering used.
  */
 export interface BackupMetadata {
   /** The name of the source connection used for the backup. */
   source: string;
-  /** The name of the database that was backed up. */
-  database?: string;
-  /**
-   * List of collection names explicitly included in the backup.
-   * Relevant when selectionMode is 'include'. May be empty if selectionMode is 'all' or 'exclude'.
-   */
-  includedCollections: string[];
-  /** The selection mode used during backup ('all', 'include', 'exclude'). */
+  /** The name of the database backed up. */
+  database: string;
+  /** The selection mode intended by the user ('all', 'include', 'exclude'). */
   selectionMode: 'all' | 'include' | 'exclude';
-  /** List of collections explicitly excluded (only relevant if selectionMode is 'exclude'). */
+  /** List of collections explicitly included (only if selectionMode is 'include'). */
+  includedCollections?: string[];
+  /** List of collections explicitly excluded (only if selectionMode is 'exclude'). */
   excludedCollections?: string[];
   /** Unix timestamp (milliseconds) when the backup was created. */
   timestamp: number;
   /** ISO 8601 string representation of the backup creation date/time. */
   date: string;
-  /** The relative path/filename of the backup archive within the backup directory. */
+  /** The filename of the backup archive (e.g., backup_....gz). */
   archivePath: string;
+  /** Optional: The name of the preset used to create this backup. */
+  presetName?: string;
 }
 
 export interface CommandLineArgs {
@@ -90,6 +89,7 @@ export interface CommandLineArgs {
   target?: string;
   configPath?: string;
   drop?: boolean;
+  preset?: string;
 }
 
 export interface ConfigType {

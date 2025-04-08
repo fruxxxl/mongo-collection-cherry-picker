@@ -1,10 +1,12 @@
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, ListCollectionsCursor } from 'mongodb';
+
 import { AppConfig, ConnectionConfig, SSHConfig } from '../types/index';
 import { createTunnel } from 'tunnel-ssh';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { URLSearchParams } from 'url';
+import type { Server } from 'net';
 
 function parseMongoUri(uri: string): {
   user?: string;
@@ -56,16 +58,33 @@ function parseMongoUri(uri: string): {
   };
 }
 
+/**
+ * Provides services for connecting to MongoDB instances,
+ * including handling connections via SSH tunnels.
+ */
 export class MongoDBService {
   private config: AppConfig;
   private client: MongoClient | null = null;
-  private sshTunnelServer: any | null = null;
+  private sshTunnelServer: Server | null = null;
 
+  /**
+   * Creates an instance of MongoDBService.
+   * @param config - The application configuration.
+   */
   constructor(config: AppConfig) {
     this.config = config;
   }
 
-  async connect(connectionConfig: ConnectionConfig): Promise<MongoClient> {
+  /**
+   * Establishes a connection to a MongoDB instance based on the provided configuration.
+   * Handles direct connections and connections via SSH tunnel automatically.
+   * Stores the active client connection internally.
+   *
+   * @param connectionConfig - The configuration for the specific MongoDB connection.
+   * @returns A promise that resolves when the connection is established.
+   * @throws An error if the connection fails.
+   */
+  async connect(connectionConfig: ConnectionConfig): Promise<void> {
     if (this.client) {
       console.warn(`[${connectionConfig.name}] Already connected. Closing existing connection before reconnecting.`);
       await this.close();
@@ -83,7 +102,6 @@ export class MongoDBService {
         this.client = await MongoClient.connect(uri);
         console.log(`[${connectionConfig.name}] Direct connection successfully established.`);
       }
-      return this.client;
     } catch (error: any) {
       console.error(`[${connectionConfig.name}] Connection failed in connect method:`, error);
       if (this.sshTunnelServer) {
@@ -96,6 +114,82 @@ export class MongoDBService {
     }
   }
 
+  /**
+   * Closes the active MongoDB client connection and any active SSH tunnel.
+   * @returns A promise that resolves when resources are closed.
+   */
+  async close(): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.close();
+        console.log('MongoDB connection closed.');
+      } catch (error: any) {
+        console.error(`Error closing MongoDB connection: ${error.message}`);
+      } finally {
+        this.client = null;
+      }
+    }
+
+    if (this.sshTunnelServer) {
+      console.log('Closing SSH tunnel...');
+      try {
+        if (typeof this.sshTunnelServer.close === 'function') {
+          this.sshTunnelServer.close();
+          console.log('SSH tunnel closed.');
+        } else {
+          console.warn('SSH tunnel server does not have a close method.');
+        }
+      } catch (error: any) {
+        console.error(`Error closing SSH tunnel: ${error.message}`);
+      } finally {
+        this.sshTunnelServer = null;
+      }
+    }
+  }
+
+  /**
+   * Retrieves a list of collection names for a specified database.
+   * Requires an active connection (call connect() first).
+   *
+   * @param dbName - The name of the database to list collections from.
+   * @returns A promise resolving to an array of collection names.
+   * @throws An error if not connected or if listing collections fails.
+   */
+  async getCollections(dbName: string): Promise<string[]> {
+    if (!this.client) {
+      throw new Error('Not connected to MongoDB. Call connect() first.');
+    }
+
+    try {
+      const db: Db = this.client.db(dbName);
+      const collectionsCursor: ListCollectionsCursor = db.listCollections({}, { nameOnly: true });
+      const collections = await collectionsCursor.toArray();
+      return collections.map((col) => col.name);
+    } catch (error: any) {
+      console.error(`Error getting collection list for database "${dbName}":`, error);
+      throw new Error(`Error getting collection list for database "${dbName}": ${error.message || error}`);
+    }
+  }
+
+  getClient(): MongoClient | null {
+    return this.client;
+  }
+
+  getDb(databaseName: string): Db {
+    if (!this.client) {
+      throw new Error('Not connected to MongoDB. Call connect() first.');
+    }
+    return this.client.db(databaseName);
+  }
+
+  /**
+   * Builds a MongoDB connection URI string from a ConnectionConfig object.
+   * Prioritizes the `uri` field if present, otherwise constructs from components.
+   *
+   * @param config - The connection configuration.
+   * @returns The MongoDB connection URI string.
+   * @throws An error if essential components (like host/port or URI) are missing.
+   */
   private buildMongoUri(config: ConnectionConfig): string {
     if (config.uri) {
       return config.uri;
@@ -157,6 +251,14 @@ export class MongoDBService {
     return `mongodb://${authStr}${hostsStr}/${config.database}${optionsStr ? '?' + optionsStr : ''}`;
   }
 
+  /**
+   * Establishes a MongoDB connection through an SSH tunnel.
+   * Creates an SSH tunnel and connects MongoClient to the local tunnel endpoint.
+   *
+   * @param config - The connection configuration including SSH details.
+   * @returns A promise resolving to the connected MongoClient instance.
+   * @throws An error if SSH tunnel creation or MongoDB connection via tunnel fails.
+   */
   private async connectWithTunnel(config: ConnectionConfig): Promise<MongoClient> {
     if (!config.ssh) {
       throw new Error(`[${config.name}] SSH configuration is missing for tunnel connection.`);
@@ -299,60 +401,5 @@ export class MongoDBService {
       }
       throw new Error(`[${config.name}] SSH tunnel or MongoDB connection failed: ${error.message || error}`);
     }
-  }
-
-  async getCollections(databaseName: string): Promise<string[]> {
-    if (!this.client) {
-      throw new Error('Not connected to MongoDB. Call connect() first.');
-    }
-
-    try {
-      const db: Db = this.client.db(databaseName);
-      const collections = await db.listCollections().toArray();
-      return collections.map((coll) => coll.name);
-    } catch (error: any) {
-      console.error(`Error getting collection list for database "${databaseName}":`, error);
-      throw new Error(`Error getting collection list for database "${databaseName}": ${error.message || error}`);
-    }
-  }
-
-  async close(): Promise<void> {
-    if (this.client) {
-      try {
-        await this.client.close();
-        console.log('MongoDB connection closed.');
-      } catch (error: any) {
-        console.error(`Error closing MongoDB connection: ${error.message}`);
-      } finally {
-        this.client = null;
-      }
-    }
-
-    if (this.sshTunnelServer) {
-      console.log('Closing SSH tunnel...');
-      try {
-        if (typeof this.sshTunnelServer.close === 'function') {
-          this.sshTunnelServer.close();
-          console.log('SSH tunnel closed.');
-        } else {
-          console.warn('SSH tunnel server does not have a close method.');
-        }
-      } catch (error: any) {
-        console.error(`Error closing SSH tunnel: ${error.message}`);
-      } finally {
-        this.sshTunnelServer = null;
-      }
-    }
-  }
-
-  getClient(): MongoClient | null {
-    return this.client;
-  }
-
-  getDb(databaseName: string): Db {
-    if (!this.client) {
-      throw new Error('Not connected to MongoDB. Call connect() first.');
-    }
-    return this.client.db(databaseName);
   }
 }

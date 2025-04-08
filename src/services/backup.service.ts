@@ -2,11 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
+import type { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
 import { formatFilename, getFormattedTimestamps } from '../utils/formatter';
 
 /**
- * Handles the creation and management of MongoDB backups using mongodump.
+ * Handles the execution of mongodump command for creating MongoDB backups.
  * Supports both direct database connections and connections via SSH tunnel.
  */
 export class BackupService {
@@ -21,15 +21,14 @@ export class BackupService {
   }
 
   /**
-   * Creates a backup archive (.gz) for a specified MongoDB source.
+   * Executes the mongodump command to create a backup archive (.gz).
    * Determines whether to run mongodump locally or remotely via SSH based on the source configuration.
-   * Handles collection filtering (all, include, exclude).
-   * Generates a metadata file (.json) alongside the backup archive.
+   * Handles collection filtering based on provided arguments.
    *
    * @param source - The configuration of the source MongoDB connection.
-   * @param selectedCollections - An array of collection names to include (used when selectionMode is 'include').
-   * @param excludedCollections - An array of collection names to exclude (used when selectionMode is 'exclude').
-   * @param selectionMode - Specifies how collections are selected for backup ('all', 'include', 'exclude').
+   * @param selectedCollections - An array of collection names for the `--collection` flag (should be empty if mode is 'exclude' or 'all').
+   * @param excludedCollections - An array of collection names for the `--excludeCollection` flag (used when mode is 'exclude').
+   * @param selectionMode - Specifies the effective mode for the mongodump command ('all', 'exclude'). 'include' mode is transformed to 'exclude' by the caller.
    * @returns A promise that resolves with the absolute path to the created backup archive file.
    * @throws An error if the backup process fails.
    */
@@ -37,23 +36,26 @@ export class BackupService {
     source: ConnectionConfig,
     selectedCollections: string[],
     excludedCollections: string[],
-    selectionMode: 'all' | 'include' | 'exclude',
+    selectionMode: 'all' | 'exclude',
   ): Promise<string> {
-    // Use the new utility function to get formatted timestamps
     const now = new Date();
-    const { date, datetime } = getFormattedTimestamps(now);
+    const { datetime } = getFormattedTimestamps(now);
 
-    // Use the formatter with the generated date and datetime
-    const filename = formatFilename(this.config.filenameFormat, date, datetime, source.name);
+    const filename = formatFilename(
+      this.config.filenameFormat || 'backup_{datetime}_{source}.gz',
+      now.toISOString().split('T')[0],
+      datetime,
+      source.name,
+    );
     const backupDir = path.resolve(this.config.backupDir);
+    const filePath = path.join(backupDir, filename);
 
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
       console.log(`Created backup directory: ${backupDir}`);
     }
 
-    const filePath = path.join(backupDir, filename);
-    console.log(`\nBackup will be saved to: ${filePath}`);
+    console.log(`\nBackup archive will be saved to: ${filePath}`);
 
     const baseArgs: string[] = [];
 
@@ -78,17 +80,19 @@ export class BackupService {
       }
     }
 
-    if (selectionMode === 'include' && selectedCollections.length > 0) {
-      selectedCollections.forEach((coll) => baseArgs.push(`--collection=${coll}`));
-    } else if (selectionMode === 'exclude' && excludedCollections.length > 0) {
+    if (selectionMode === 'exclude' && excludedCollections.length > 0) {
       excludedCollections.forEach((coll) => baseArgs.push(`--excludeCollection=${coll}`));
+      console.log(`[${source.name}] Backup mode (effective): exclude collections: ${excludedCollections.join(', ')}`);
+    } else {
+      console.log(`[${source.name}] Backup mode (effective): all collections`);
     }
 
     baseArgs.push('--gzip');
 
-    try {
-      const mongodumpPath = this.config.mongodumpPath || 'mongodump';
+    const mongodumpPath = this.config.mongodumpPath || 'mongodump';
+    let commandStringForLog = '';
 
+    try {
       if (source.ssh) {
         console.log(`Executing mongodump via SSH to ${source.ssh.host}...`);
 
@@ -104,7 +108,10 @@ export class BackupService {
         }
 
         const remoteCommand = `${mongodumpPath} ${remoteArgs.join(' ')}`;
-        console.log(`Remote command to execute: ${remoteCommand}`);
+        commandStringForLog = `ssh ... "${remoteCommand}" > ${filePath}`;
+        console.log(
+          `Executing remote mongodump command via SSH:\n${remoteCommand}\n(Output piped locally to ${path.basename(filePath)})`,
+        );
 
         const privateKeyPath = source.ssh.privateKey.startsWith('~')
           ? path.join(os.homedir(), source.ssh.privateKey.substring(1))
@@ -119,36 +126,41 @@ export class BackupService {
           remoteCommand,
         ];
 
-        const outputFile = fs.createWriteStream(filePath);
-        console.log(`Executing SSH command: ssh ${sshArgs.slice(0, -1).join(' ')} "${remoteCommand}"`);
-
+        const archiveWriteStream = fs.createWriteStream(filePath);
         const sshProcess = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-        sshProcess.stdout.pipe(outputFile);
+        sshProcess.stdout.pipe(archiveWriteStream);
 
         let errorOutput = '';
         sshProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`SSH stderr: ${errorChunk.trim()}`);
+          console.warn(`mongodump stderr (ssh): ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 
         const exitCode = await new Promise<number>((resolve, reject) => {
-          outputFile.on('close', () => {
-            sshProcess.on('close', resolve);
+          archiveWriteStream.on('error', (err) => {
+            console.error(`Error writing local archive file ${filePath}: ${err.message}`);
+            if (!sshProcess.killed) sshProcess.kill();
+            reject(new Error(`Error writing local archive file: ${err.message}`));
+          });
+          archiveWriteStream.on('close', () => {
+            console.log(`[${source.name}] SSH backup stream to ${path.basename(filePath)} closed.`);
+            if (sshProcess.exitCode !== null) {
+              resolve(sshProcess.exitCode);
+            } else {
+              sshProcess.on('close', resolve);
+            }
           });
           sshProcess.on('error', (err) => {
             console.error(`Failed to start SSH process: ${err.message}`);
             reject(new Error(`Failed to start SSH process: ${err.message}`));
           });
-          outputFile.on('error', (err) => {
-            console.error(`Error writing to local backup file: ${err.message}`);
-            sshProcess.kill();
-            reject(new Error(`Error writing to local backup file: ${err.message}`));
-          });
           sshProcess.on('close', (code) => {
-            if (!outputFile.writableEnded) {
-              resolve(code ?? 1);
+            if (!archiveWriteStream.writableEnded) {
+              console.warn(`SSH process closed (code: ${code}) before file stream finished writing.`);
+              archiveWriteStream.end(() => {
+                resolve(code ?? 1);
+              });
             }
           });
         });
@@ -156,22 +168,19 @@ export class BackupService {
         if (exitCode !== 0) {
           throw new Error(`SSH mongodump execution finished with exit code ${exitCode}. Stderr: ${errorOutput}`);
         }
-
-        console.log('SSH backup process completed successfully.');
+        console.log(`[${source.name}] SSH mongodump process completed successfully.`);
       } else {
         const directArgs = [...baseArgs];
         directArgs.push(`--archive=${filePath}`);
+        commandStringForLog = `${mongodumpPath} ${directArgs.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}`;
+        console.log(`\nExecuting local mongodump command:\n${commandStringForLog}\n`);
 
-        console.log('\nExecuting local mongodump command:');
-        const commandString = `${mongodumpPath} ${directArgs.join(' ')}`;
-        console.log(`${commandString}\n`);
-
-        const dumpProcess = spawn(mongodumpPath, directArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+        const dumpProcess = spawn(mongodumpPath, directArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
 
         let errorOutput = '';
         dumpProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`mongodump: ${errorChunk.trim()}`);
+          console.warn(`mongodump stderr: ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 
@@ -186,27 +195,13 @@ export class BackupService {
         if (exitCode !== 0) {
           throw new Error(`Local mongodump finished with exit code ${exitCode}. Stderr: ${errorOutput}`);
         }
-        console.log('Local backup process completed successfully.');
+        console.log(`[${source.name}] Local mongodump process completed successfully.`);
       }
-
-      const backupMetadata: BackupMetadata = {
-        source: source.name,
-        database: source.database,
-        includedCollections: selectionMode === 'include' ? selectedCollections : [],
-        selectionMode: selectionMode,
-        excludedCollections: selectionMode === 'exclude' ? excludedCollections : undefined,
-        timestamp: Date.now(),
-        date: new Date().toISOString(),
-        archivePath: filename,
-      };
-
-      const metadataPath = `${filePath}.json`;
-      fs.writeFileSync(metadataPath, JSON.stringify(backupMetadata, null, 2));
-      console.log(`Backup metadata saved to: ${metadataPath}`);
 
       return filePath;
     } catch (error: any) {
       console.error(`\n✖ Error creating backup: ${error.message}`);
+      console.error(`Failed command (approximate): ${commandStringForLog}`);
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
@@ -220,65 +215,54 @@ export class BackupService {
   }
 
   /**
-   * Retrieves a list of backup archive files (.gz) from the configured backup directory.
-   * Files are sorted by modification time in descending order (newest first).
-   *
-   * @returns An array of backup filenames found in the backup directory, sorted newest first.
+   * Loads backup metadata from the .json file corresponding to a backup archive.
+   * @param backupFilename - The filename of the backup archive (e.g., backup_....gz).
+   * @returns The parsed BackupMetadata object.
+   * @throws An error if the metadata file is not found or cannot be parsed.
    */
-  getBackupFiles(): string[] {
-    const backupDir = path.resolve(this.config.backupDir);
-    if (!fs.existsSync(backupDir)) {
-      console.log(`Backup directory not found: ${backupDir}`);
-      return [];
+  loadBackupMetadata(backupFilename: string): BackupMetadata {
+    const metadataPath = path.join(this.config.backupDir, `${backupFilename}.json`);
+    if (!fs.existsSync(metadataPath)) {
+      throw new Error(`Metadata file not found: ${metadataPath}`);
     }
-
     try {
-      const filesWithStats = fs
-        .readdirSync(backupDir)
-        .filter((file) => file.endsWith('.gz'))
-        .map((file) => {
-          try {
-            const filePath = path.join(backupDir, file);
-            const stats = fs.statSync(filePath);
-            return { file, mtimeMs: stats.mtimeMs }; // Get modification time in milliseconds
-          } catch (statError: any) {
-            console.warn(`Could not get stats for file ${file}: ${statError.message}`);
-            return { file, mtimeMs: 0 }; // Assign 0 time if stats fail, placing it last
-          }
-        });
-
-      // Sort by modification time, descending (newest first)
-      filesWithStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
-
-      // Return only the filenames
-      return filesWithStats.map((item) => item.file);
+      const metadataContent = fs.readFileSync(metadataPath, 'utf-8');
+      const metadata = JSON.parse(metadataContent) as BackupMetadata;
+      if (!metadata.source || !metadata.timestamp || !metadata.archivePath) {
+        throw new Error('Metadata file is missing required fields (source, timestamp, archivePath).');
+      }
+      metadata.archivePath = path.basename(metadata.archivePath);
+      return metadata;
     } catch (error: any) {
-      console.error(`Error reading backup directory ${backupDir}: ${error.message}`);
-      return [];
+      throw new Error(`Failed to load or parse metadata file ${metadataPath}: ${error.message}`);
     }
   }
 
   /**
-   * Loads backup metadata from the .json file corresponding to a given archive filename.
-   *
-   * @param archiveFilename - The filename of the backup archive (e.g., "backup_2023-10-27_prod.gz").
-   * @returns The parsed BackupMetadata object.
-   * @throws An error if the metadata file is not found or cannot be parsed.
+   * Lists backup archive files (.gz) in the backup directory, sorted newest first.
+   * @returns An array of backup filenames.
    */
-  loadBackupMetadata(archiveFilename: string): BackupMetadata {
+  getBackupFiles(): string[] {
     const backupDir = path.resolve(this.config.backupDir);
-    const metadataPath = path.join(backupDir, `${archiveFilename}.json`);
-
-    if (!fs.existsSync(metadataPath)) {
-      console.error(`Attempted to load metadata from: ${metadataPath}`);
-      throw new Error(`Backup metadata file not found: ${metadataPath}`);
+    if (!fs.existsSync(backupDir)) {
+      return [];
     }
-
     try {
-      const metadataJson = fs.readFileSync(metadataPath, 'utf8');
-      return JSON.parse(metadataJson) as BackupMetadata;
+      const files = fs.readdirSync(backupDir);
+      return files
+        .filter((file) => file.endsWith('.gz') && !file.startsWith('.'))
+        .map((file) => {
+          try {
+            return { name: file, time: fs.statSync(path.join(backupDir, file)).mtime.getTime() };
+          } catch {
+            return { name: file, time: 0 };
+          }
+        })
+        .sort((a, b) => b.time - a.time)
+        .map((file) => file.name);
     } catch (error: any) {
-      throw new Error(`Failed to read or parse metadata file ${metadataPath}: ${error.message}`);
+      console.error(`Error reading backup directory ${backupDir}: ${error.message}`);
+      return [];
     }
   }
 }

@@ -4,57 +4,115 @@ import inquirer from 'inquirer';
 import fs from 'fs';
 import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
-import { PromptService } from '../utils/prompts';
-import { AppConfig, RestorePreset, ConnectionConfig, RestoreOptions } from '../types/index';
+import type { PromptService } from '../utils/prompts';
+import type { AppConfig, RestorePreset, ConnectionConfig, BackupMetadata } from '../types/index';
 
+/**
+ * Manages the restore process, coordinating user prompts (if needed) and the RestoreService.
+ */
 export class RestoreManager {
   private config: AppConfig;
   private backupService: BackupService;
   private restoreService: RestoreService;
   private promptService: PromptService;
 
-  constructor(config: AppConfig) {
+  /**
+   * Creates an instance of RestoreManager.
+   * @param config - The application configuration.
+   * @param backupService - Service for accessing backup files and metadata.
+   * @param promptService - Service for handling user interactions.
+   */
+  constructor(config: AppConfig, backupService: BackupService, promptService: PromptService) {
     this.config = config;
+    this.backupService = backupService;
+    this.promptService = promptService;
     this.restoreService = new RestoreService(config);
-    this.backupService = new BackupService(config);
-    this.promptService = new PromptService(config);
   }
 
-  async runRestore(backupFile: string, targetName: string, options: RestoreOptions = {}): Promise<void> {
-    if (!fs.existsSync(backupFile)) {
-      throw new Error(`Backup file not found: ${backupFile}`);
-    }
-
-    const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
-
-    // Find target connection
-    const targetConfig = this.config.connections.find((conn: ConnectionConfig) => conn.name === targetName);
-    if (!targetConfig) {
-      throw new Error(`Connection "${targetName}" not found in configuration`);
-    }
-
-    // Restoration with provided options
-    await this.restoreService.restoreBackup(backupMetadata, targetConfig, options);
-
-    console.log(`Backup successfully restored to database ${targetName}`);
-  }
-
-  async restoreDatabase(): Promise<void> {
+  /**
+   * Runs the restore operation for a given backup file to a specified target connection.
+   * Loads backup metadata and calls the RestoreService, passing the metadata for filtering.
+   *
+   * @param backupFilename - The filename (relative to backupDir) of the backup archive to restore.
+   * @param targetName - The name of the target connection configuration.
+   * @param options - Restoration options (e.g., { drop: true }).
+   * @throws An error if the target connection or backup file is not found, or if metadata loading/restore fails.
+   */
+  async runRestore(backupFilename: string, targetName: string, options: { drop: boolean }): Promise<void> {
+    const spinner = ora(`Preparing restore for ${backupFilename} to ${targetName}...`).start();
     try {
-      // Use PromptService for interactive selection
+      const targetConfig = this.config.connections.find((c) => c.name === targetName);
+      if (!targetConfig) {
+        throw new Error(`Target connection "${targetName}" not found in configuration.`);
+      }
+      if (!targetConfig.database) {
+        throw new Error(`Target connection "${targetName}" must have a 'database' field defined for restore.`);
+      }
+
+      spinner.text = `Loading metadata for ${backupFilename}...`;
+      let backupMetadata: BackupMetadata;
+      try {
+        backupMetadata = this.backupService.loadBackupMetadata(backupFilename);
+        spinner.text = `Loaded metadata for ${backupFilename}. Source DB: ${backupMetadata.database || 'N/A'}`;
+        console.log('\n--- Backup Metadata ---');
+        console.log(`Source:   ${backupMetadata.source}`);
+        console.log(`Database: ${backupMetadata.database || 'N/A'}`);
+        console.log(`Created:  ${new Date(backupMetadata.timestamp).toLocaleString()}`);
+        console.log(`Mode:     ${backupMetadata.selectionMode}`);
+        if (backupMetadata.includedCollections?.length) {
+          console.log(`Included: ${backupMetadata.includedCollections.join(', ')}`);
+        }
+        if (backupMetadata.excludedCollections?.length) {
+          console.log(`Excluded: ${backupMetadata.excludedCollections.join(', ')}`);
+        }
+        console.log('-----------------------\n');
+      } catch (error: any) {
+        throw new Error(`Failed to load metadata for backup "${backupFilename}": ${error.message}`);
+      }
+
+      const backupDir = path.resolve(this.config.backupDir);
+      const fullBackupPath = path.join(backupDir, backupMetadata.archivePath);
+      if (!fs.existsSync(fullBackupPath)) {
+        throw new Error(
+          `Backup archive file "${backupMetadata.archivePath}" specified in metadata not found in directory "${backupDir}".`,
+        );
+      }
+
+      spinner.stop();
+
+      console.log(`\nInitiating restore process for ${backupFilename} to ${targetName}...`);
+
+      await this.restoreService.restoreBackup(backupMetadata, targetConfig, options);
+
+      spinner.succeed(
+        `Backup "${backupFilename}" successfully restored to target "${targetName}" (Database: ${targetConfig.database})`,
+      );
+    } catch (error: any) {
+      if (spinner.isSpinning) {
+        spinner.fail(`Restore operation failed: ${error.message}`);
+      } else {
+        console.error(`\n✖ Restore operation failed: ${error.message}`);
+      }
+      if (spinner.isSpinning) {
+        spinner.stop();
+      }
+    }
+  }
+
+  /**
+   * Initiates the interactive restore process.
+   * Prompts the user for backup file and target, then calls runRestore.
+   */
+  async restoreDatabase(): Promise<void> {
+    const spinner = ora('Starting interactive restore...').start();
+    try {
+      spinner.stop();
       const { backupFile, target, options } = await this.promptService.promptForRestore();
+      spinner.start(`Preparing restore for ${backupFile} to ${target.name}...`);
 
-      // Load metadata from file
-      const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
-
-      // Restore backup with options
-      await this.restoreService.restoreBackup(backupMetadata, target, options);
-
-      console.log('Restoration completed successfully.');
-      return;
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      await this.runRestore(backupFile, target.name, options);
+    } catch (error: any) {
+      spinner.fail(`Interactive restore failed: ${error.message}`);
     }
   }
 
@@ -65,7 +123,6 @@ export class RestoreManager {
       throw new Error(`Target "${preset.targetName}" not found in configuration`);
     }
 
-    // Get list of backup files matching pattern
     const backupFiles = this.backupService.getBackupFiles();
 
     let filteredFiles = backupFiles;
@@ -78,7 +135,6 @@ export class RestoreManager {
       throw new Error('No backup files found matching pattern');
     }
 
-    // Select backup file
     const { backupFile } = await inquirer.prompt({
       type: 'list',
       name: 'backupFile',
@@ -86,13 +142,10 @@ export class RestoreManager {
       choices: filteredFiles,
     });
 
-    // Load backup metadata
     const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
 
-    // Get restore options from preset or defaults
     const options = preset.options || {};
 
-    // Prepare command
     const commandArgs = [
       `--host=${target.host || 'localhost'}:${target.port || 27017}`,
       `--db=${target.database}`,
@@ -100,7 +153,6 @@ export class RestoreManager {
       `--archive=${path.join(this.config.backupDir, backupFile)}`,
     ];
 
-    // Add drop option if set
     if (options.drop) {
       commandArgs.push('--drop');
     }
@@ -116,7 +168,6 @@ export class RestoreManager {
     });
 
     if (confirm) {
-      // Execute restoration
       const spinner = ora('Restoring backup...').start();
       try {
         await this.restoreService.restoreBackup(backupMetadata, target, options);

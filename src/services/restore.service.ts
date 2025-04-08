@@ -1,29 +1,36 @@
-import { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../types/index';
+import type { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../types/index';
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { MongoDBService } from './mongodb.service';
 import { spawn } from 'child_process';
 import os from 'os';
 
+/**
+ * Handles the restoration of MongoDB backups using mongorestore.
+ * Supports restoring from archives (.gz) via direct connection or SSH tunnel.
+ */
 export class RestoreService {
   private config: AppConfig;
 
+  /**
+   * Creates an instance of RestoreService.
+   * @param config - The application configuration.
+   */
   constructor(config: AppConfig) {
     this.config = config;
   }
 
   /**
-   * Restores a MongoDB database from a backup archive using mongorestore.
-   * Handles both direct and SSH connections for the target.
-   * Uses metadata to determine restore parameters.
+   * Restores a MongoDB database from a backup archive, using metadata for filtering.
+   * Determines whether to run mongorestore locally or remotely via SSH based on the target configuration.
+   * Applies namespace filtering (--nsInclude/--nsExclude) based on the backup metadata.
    *
-   * @param backupMetadata - The metadata loaded from the backup's .json file.
-   * @param target - The configuration of the target MongoDB connection.
-   * @param options - Restore options, like dropping the database first.
-   * @returns A promise that resolves when the restore is complete.
-   * @throws An error if the restore process fails.
+   * @param backupMetadata - Metadata associated with the backup archive, including filtering intent.
+   * @param target - The configuration of the target MongoDB connection for restoration.
+   * @param options - Restoration options, such as dropping collections (`drop`).
+   * @returns A promise that resolves when the restoration is complete.
+   * @throws An error if the restoration process fails or prerequisites are not met.
    */
   async restoreBackup(
     backupMetadata: BackupMetadata,
@@ -38,16 +45,17 @@ export class RestoreService {
     }
 
     console.log(`\nStarting restore from: ${archivePath}`);
-    console.log(`Target: ${target.name} (${target.database})`);
+    console.log(`Target connection: ${target.name} (Database: ${target.database})`);
+    if (options.drop) {
+      console.log('Option --drop enabled: Existing collections in the target database will be dropped.');
+    }
 
-    // --- Build mongorestore arguments ---
     const baseArgs: string[] = [];
 
-    // Add target connection details (URI or host/port/auth)
-    // Similar logic as in BackupService, but for the target
+    // --- Target Connection Arguments ---
     if (target.uri && !target.ssh) {
       baseArgs.push(`--uri="${target.uri}"`);
-    } else if (!target.uri) {
+    } else if (!target.ssh) {
       if (target.host) baseArgs.push(`--host=${target.host}`);
       if (target.port) baseArgs.push(`--port=${target.port}`);
       if (target.username) baseArgs.push(`--username=${target.username}`);
@@ -55,77 +63,74 @@ export class RestoreService {
       const authDb = target.authenticationDatabase || target.authSource || target.authDatabase;
       if (authDb) baseArgs.push(`--authenticationDatabase=${authDb}`);
     }
+    // --- End Target Connection Arguments ---
 
-    // Specify the target database if not using URI with database name
-    // Use --nsFrom / --nsTo to map the database from the archive to the target database
-    const sourceDbName = backupMetadata.database; // Get source DB name from metadata
-    const targetDbName = target.database; // Get target DB name from config
-
-    if (targetDbName && sourceDbName) {
-      // Use --nsFrom and --nsTo with the correct 'database.*' syntax
-      baseArgs.push(`--nsFrom="${sourceDbName}.*"`); // Source DB and all its collections
-      baseArgs.push(`--nsTo="${targetDbName}.*"`); // Target DB and all its collections
-    } else if (targetDbName && !sourceDbName) {
-      // Fallback if source DB name is missing in metadata (unlikely)
+    // --- Namespace Mapping ---
+    const sourceDbInBackup = backupMetadata.database;
+    if (!sourceDbInBackup) {
       console.warn(
-        `Source database name missing in metadata for archive ${backupMetadata.archivePath}. Attempting restore using --db=${targetDbName}.`,
+        `Warning: Source database name not found in backup metadata for ${backupMetadata.archivePath}. Restore might behave unexpectedly if collections weren't in the default 'test' db.`,
       );
-      baseArgs.push(`--db=${targetDbName}`); // Fallback to --db
-    } else if (!targetDbName && !target.uri?.includes('/')) {
-      // Target DB must be specified somehow
-      throw new Error(`[${target.name}] Target database name is required if not specified in URI or config.`);
+      if (target.database) {
+        baseArgs.push(`--db=${target.database}`);
+      } else if (!target.uri) {
+        throw new Error(
+          `[${target.name}] Target database name is required for restore if URI is not provided and source DB is unknown in metadata.`,
+        );
+      }
+    } else if (target.database) {
+      baseArgs.push(`--nsFrom="${sourceDbInBackup}.*"`);
+      baseArgs.push(`--nsTo="${target.database}.*"`);
+      console.log(`Mapping namespaces from "${sourceDbInBackup}" to "${target.database}"`);
+    } else if (!target.uri) {
+      throw new Error(`[${target.name}] Target database name is required for restore if URI is not provided.`);
     }
-    // If targetDbName is not specified here but is in the URI, mongorestore should use the one from the URI.
+    // --- End Namespace Mapping ---
 
-    // Add archive and gzip arguments
-    baseArgs.push('--gzip');
-    baseArgs.push(`--archive=${archivePath}`); // For direct execution
-
-    // Add options
+    // Add the --drop option if specified
     if (options.drop) {
-      // --drop will drop the TARGET database before restoring
       baseArgs.push('--drop');
     }
 
+    // Specify the input archive file
+    baseArgs.push(`--archive=${archivePath}`);
+    baseArgs.push('--gzip');
+
     try {
       const mongorestorePath = this.config.mongorestorePath || 'mongorestore';
+      let commandStringForLog = '';
 
+      // --- Execute mongorestore (Local or SSH) ---
       if (target.ssh) {
         // --- SSH Execution ---
-        // Similar logic to BackupService: mongorestore reads from stdin
         console.log(`Executing mongorestore via SSH to ${target.ssh.host}...`);
-
         const remoteArgs = [...baseArgs];
-        // Remove --archive=path, replace with --archive (stdin)
         const archiveIndex = remoteArgs.findIndex((arg) => arg.startsWith('--archive='));
         if (archiveIndex > -1) {
           remoteArgs.splice(archiveIndex, 1);
-          // Add --archive without value for stdin
-          if (!remoteArgs.includes('--archive')) {
-            // Ensure it's not added twice
-            remoteArgs.push('--archive');
-          }
+          remoteArgs.push('--archive');
         } else {
-          // If --archive=path wasn't found, ensure --archive (stdin) is present
-          if (!remoteArgs.includes('--archive')) {
-            remoteArgs.push('--archive');
-          }
+          remoteArgs.push('--archive');
         }
 
-        // Remote command needs connection details
         if (target.uri) {
-          remoteArgs.push(`--uri="${target.uri}"`);
-        } else if (!baseArgs.some((arg) => arg.startsWith('--host=') || arg.startsWith('--port='))) {
-          console.warn(`[${target.name}] Warning: SSH restore without URI might need host/port.`);
+          if (!remoteArgs.some((arg) => arg.startsWith('--uri='))) {
+            remoteArgs.push(`--uri="${target.uri}"`);
+          }
+        } else if (!remoteArgs.some((arg) => arg.startsWith('--host=') || arg.startsWith('--port='))) {
+          console.warn(
+            `[${target.name}] Warning: SSH restore without URI might need host/port if remote mongorestore isn't connecting to localhost.`,
+          );
         }
 
         const remoteCommand = `${mongorestorePath} ${remoteArgs.join(' ')}`;
+        commandStringForLog = `cat ${archivePath} | ssh ... "${remoteCommand}"`;
         console.log(`Remote command to execute: ${remoteCommand}`);
+        console.log(`Piping local archive: ${archivePath}`);
 
         const privateKeyPath = target.ssh.privateKey.startsWith('~')
           ? path.join(os.homedir(), target.ssh.privateKey.substring(1))
           : target.ssh.privateKey;
-
         const sshArgs = [
           '-i',
           privateKeyPath,
@@ -135,25 +140,25 @@ export class RestoreService {
           remoteCommand,
         ];
 
-        const inputFile = fs.createReadStream(archivePath);
-        console.log(`Executing SSH command: ssh ${sshArgs.slice(0, -1).join(' ')} "${remoteCommand}"`);
+        const sshProcess = spawn('ssh', sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+        const archiveStream = fs.createReadStream(archivePath);
+        archiveStream.pipe(sshProcess.stdin);
 
-        const sshProcess = spawn('ssh', sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] }); // stdin is piped
-
-        // Pipe local archive file to remote mongorestore's stdin
-        inputFile.pipe(sshProcess.stdin);
+        archiveStream.on('error', (err) => {
+          console.error(`Error reading local archive file ${archivePath}: ${err.message}`);
+          if (!sshProcess.killed) sshProcess.kill();
+        });
 
         let output = '';
         sshProcess.stdout.on('data', (data) => {
           const chunk = data.toString();
-          console.log(`SSH stdout: ${chunk.trim()}`);
+          console.log(`mongorestore (ssh): ${chunk.trim()}`);
           output += chunk;
         });
-
         let errorOutput = '';
         sshProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`SSH stderr: ${errorChunk.trim()}`);
+          console.warn(`mongorestore stderr (ssh): ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 
@@ -163,10 +168,12 @@ export class RestoreService {
             console.error(`Failed to start SSH process: ${err.message}`);
             reject(new Error(`Failed to start SSH process: ${err.message}`));
           });
-          inputFile.on('error', (err) => {
-            console.error(`Error reading local backup file: ${err.message}`);
-            sshProcess.kill(); // Attempt to kill SSH if input fails
-            reject(new Error(`Error reading local backup file: ${err.message}`));
+          archiveStream.on('close', () => {
+            console.log(`Finished piping ${archivePath} to SSH stdin.`);
+          });
+          archiveStream.on('error', (err) => {
+            if (!sshProcess.killed) sshProcess.kill();
+            reject(new Error(`Failed reading archive for SSH pipe: ${err.message}`));
           });
         });
 
@@ -176,19 +183,13 @@ export class RestoreService {
         console.log('SSH restore process completed successfully.');
         this.processRestoreOutput(output, errorOutput);
       } else {
-        // --- Direct Execution ---
-        // ---> Аргументы baseArgs уже содержат --archive=path <---
+        // --- Direct Local Execution ---
         const directArgs = [...baseArgs];
-
+        commandStringForLog = `${mongorestorePath} ${directArgs.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}`;
         console.log('\nExecuting local mongorestore command:');
-        // Убедимся, что аргументы в кавычках не экранируются дополнительно оболочкой
-        const commandString = `${mongorestorePath} ${directArgs.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}`;
-        console.log(`${commandString}\n`);
+        console.log(`${commandStringForLog}\n`);
 
-        const restoreProcess = spawn(mongorestorePath, directArgs, {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          shell: false, // Важно: не использовать shell, чтобы избежать проблем с кавычками
-        });
+        const restoreProcess = spawn(mongorestorePath, directArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
 
         let output = '';
         restoreProcess.stdout.on('data', (data) => {
@@ -196,7 +197,6 @@ export class RestoreService {
           console.log(`mongorestore: ${chunk.trim()}`);
           output += chunk;
         });
-
         let errorOutput = '';
         restoreProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
@@ -218,95 +218,55 @@ export class RestoreService {
         console.log('Local restore process completed successfully.');
         this.processRestoreOutput(output, errorOutput);
       }
+      // --- End Execute mongorestore ---
     } catch (error: any) {
       console.error(`\n✖ Error during restore: ${error.message}`);
-      throw error; // Re-throw the error
+      throw error;
     }
   }
 
   /**
-   * Processes the stdout and stderr streams from mongorestore to provide categorized output.
-   * Separates informational messages from potential errors within stderr.
+   * Parses the output of mongorestore to extract summary information.
+   * Logs the number of documents restored and failed.
+   * Checks both stdout and stderr as mongorestore output can vary.
    *
-   * @param stdout - The accumulated standard output string.
-   * @param stderr - The accumulated standard error string.
+   * @param stdout - The standard output string from the mongorestore process.
+   * @param stderr - The standard error string from the mongorestore process.
    */
   private processRestoreOutput(stdout: string, stderr: string): void {
-    // Positive patterns indicating progress or success, often found in stderr
-    const positivePatterns = [
-      'document(s) restored successfully',
-      'finished restoring',
-      'preparing collections to restore',
-      'reading metadata',
-      'restoring',
-      'done',
-      'no indexes to restore',
-      'index:',
-      'restoring indexes',
-      'options:', // Often precedes informational output
-    ];
-
-    console.log('\n--- mongorestore Execution Summary ---'); // Add a header for clarity
-
-    if (stderr) {
-      const errorLines = stderr.split('\n').filter((line) => line.trim());
-      const [infoLines, realErrors] = this.splitOutputLines(errorLines, positivePatterns);
-
-      if (infoLines.length > 0) {
-        // Log informational messages from stderr clearly
-        console.log('[mongorestore Info (from stderr)]:\n', infoLines.join('\n'));
-      }
-      if (realErrors.length > 0) {
-        // Log potential errors from stderr with more emphasis
-        console.warn('[mongorestore Potential Issues (from stderr)]:\n', realErrors.join('\n'));
-      }
-    } else {
-      console.log('[mongorestore stderr]: (empty)');
+    const combinedOutput = stdout + '\n' + stderr;
+    const successRegex = /(\d+)\s+document\(s\)\s+restored successfully/g;
+    const failedRegex = /(\d+)\s+document\(s\)\s+failed to restore/g;
+    let totalRestored = 0;
+    let totalFailed = 0;
+    let match;
+    while ((match = successRegex.exec(combinedOutput)) !== null) {
+      totalRestored += parseInt(match[1], 10);
     }
-
-    if (stdout) {
-      // Log standard output
-      console.log('[mongorestore stdout]:\n', stdout.trim());
-    } else {
-      console.log('[mongorestore stdout]: (empty)');
+    while ((match = failedRegex.exec(combinedOutput)) !== null) {
+      totalFailed += parseInt(match[1], 10);
     }
-    console.log('------------------------------------'); // Footer for clarity
+    if (totalRestored === 0 && totalFailed === 0 && !stderr.match(/fail|error/i)) {
+      const simpleCountMatch = stdout.match(/(\d+)\s+documents/);
+      if (simpleCountMatch) {
+        console.log(
+          'Restore output doesn\'t explicitly state success/failure counts, but no errors detected in stderr.',
+        );
+      } else if (!stderr.trim()) {
+        console.log('Restore process finished without explicit counts, and stderr is empty.');
+      }
+    }
+    console.log('\n--- Restore Summary ---');
+    console.log(`Documents restored: ${totalRestored}`);
+    if (totalFailed > 0) console.warn(`Documents failed:   ${totalFailed}`);
+    else console.log(`Documents failed:   ${totalFailed}`);
+    console.log('---------------------\n');
   }
 
-  /**
-   * Splits lines of output based on whether they contain known positive/informational patterns.
-   *
-   * @param lines - An array of output lines (typically from stderr).
-   * @param patterns - An array of strings or regex patterns indicating informational messages.
-   * @returns A tuple containing two arrays: [infoLines, realErrors].
-   */
-  private splitOutputLines(lines: string[], patterns: string[]): [string[], string[]] {
-    const infoLines: string[] = [];
-    const realErrors: string[] = [];
-
-    for (const line of lines) {
-      // Check if the line contains any of the positive patterns (case-insensitive)
-      if (patterns.some((pattern) => line.toLowerCase().includes(pattern.toLowerCase()))) {
-        infoLines.push(line);
-      } else {
-        realErrors.push(line);
-      }
-    }
-
-    return [infoLines, realErrors];
-  }
-
+  // Optional: Keep or remove checkRestoreResults if needed
+  /*
   private async checkRestoreResults(target: ConnectionConfig): Promise<void> {
-    const mongoService = new MongoDBService(this.config);
-    try {
-      await mongoService.connect(target);
-      const collections = await mongoService.getCollections(target.database);
-      console.log(`Found ${collections.length} collections in the database ${target.database}`);
-      if (collections.length > 0) {
-        console.log(`Collections: ${collections.join(', ')}`);
-      }
-    } finally {
-      await mongoService.close();
-    }
+    // ... implementation ...
   }
+  */
 }
