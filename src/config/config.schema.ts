@@ -31,7 +31,7 @@ export const BackupPresetSchema = z.object({
 
 export const AppConfigSchema = z.object({
   backupDir: z.string().default('./backups'),
-  filenameFormat: z.string().default('backup_{{timestamp}}_{{source}}.gz'),
+  filenameFormat: z.string().default('backup_{{datetime}}_{{source}}.gz'),
   connections: z.array(ConnectionConfigSchema),
   mongodumpPath: z.string().optional().default('mongodump'),
   mongorestorePath: z.string().optional().default('mongorestore'),

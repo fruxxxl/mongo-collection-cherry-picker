@@ -2,7 +2,6 @@ import ora from 'ora';
 import path from 'path';
 import inquirer from 'inquirer';
 import fs from 'fs';
-import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
 import { PromptService } from '../utils/prompts';
@@ -10,7 +9,6 @@ import { AppConfig, RestorePreset, ConnectionConfig, RestoreOptions } from '../t
 
 export class RestoreManager {
   private config: AppConfig;
-  private mongoService: MongoDBService;
   private backupService: BackupService;
   private restoreService: RestoreService;
   private promptService: PromptService;
@@ -18,7 +16,6 @@ export class RestoreManager {
   constructor(config: AppConfig) {
     this.config = config;
     this.restoreService = new RestoreService(config);
-    this.mongoService = new MongoDBService(config);
     this.backupService = new BackupService(config);
     this.promptService = new PromptService(config);
   }

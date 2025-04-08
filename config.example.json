@@ -1,20 +1,16 @@
 {
     "backupDir": "./backups",
-    "filenameFormat": "backup_{{date}}_{{source}}.gz",
+    "filenameFormat": "backup_{{datetime}}_{{source}}.gz",
     "connections": [
         {
             "name": "Local MongoDB",
             "uri": "mongodb://localhost:27017/",
             "database": "source_db",
-            "host": "localhost",
-            "port": 27017
         },
         {
             "name": "Local MongoDB 2",
             "uri": "mongodb://localhost:27017/",
             "database": "target_db",
-            "host": "localhost",
-            "port": 27017
         }
     ],
     "mongodumpPath": "mongodump",

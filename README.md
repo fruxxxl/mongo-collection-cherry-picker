@@ -45,7 +45,7 @@ Create or modify the `config.json` file in your project root:
 ```json
 {
   "backupDir": "./backups", // Directory to store backup files
-  "filenameFormat": "backup_{{date}}_{{source}}.gz", // Format for backup filenames. Placeholders: {{date}}, {{source}}
+  "filenameFormat": "backup_{{datetime}}_{{source}}.gz", // Format for backup filenames. Placeholders: {{date}} (DD-MM-YYYY), {{datetime}} (DD-MM-YYYY_HH-mm), {{source}}
   "mongodumpPath": "mongodump", // Optional: Path to mongodump executable
   "mongorestorePath": "mongorestore", // Optional: Path to mongorestore executable
   "connections": [
@@ -106,7 +106,8 @@ Create or modify the `config.json` file in your project root:
 
 *   `backupDir`: Path where backup archives (`.gz`) and metadata (`.gz.json`) files are stored.
 *   `filenameFormat`: Template for naming backup files.
-    *   `{{date}}`: Replaced with the current date (YYYY-MM-DD).
+    *   `{{date}}`: Replaced with the current date (DD-MM-YYYY).
+    *   `{{datetime}}`: Replaced with the current date and time (e.g., `08-04-2025_15-30`). Recommended for preventing overwrites.
     *   `{{source}}`: Replaced with the `name` of the source connection.
 *   `mongodumpPath`, `mongorestorePath`: Optional: Specify the full path to the executables if not in system PATH.
 *   `connections`: Array of MongoDB connection configurations.

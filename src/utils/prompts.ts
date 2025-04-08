@@ -4,6 +4,7 @@ import { BackupService } from '../services/backup.service';
 import { MongoDBService } from '../services/mongodb.service';
 import { savePresets } from '../utils';
 import path from 'path';
+import { formatFilename, getFormattedTimestamps } from './formatter';
 
 export class PromptService {
   private config: AppConfig;
@@ -110,21 +111,51 @@ export class PromptService {
     target: ConnectionConfig;
     backupFile: string;
     options: { drop: boolean };
+    // Add metadata to the return type if needed elsewhere, otherwise just display it
+    // backupMetadata: BackupMetadata;
   }> {
-    // Получаем список файлов резервных копий
+    // Get the list of backup files (now sorted newest first by getBackupFiles)
     const backupFiles = this.backupService.getBackupFiles();
 
     if (backupFiles.length === 0) {
       throw new Error('No backup files found');
     }
 
-    // Ask user to select backup file
+    // Ask user to select backup file, indicating the sort order
     const { backupFile } = await inquirer.prompt({
       type: 'list',
       name: 'backupFile',
-      message: 'Select backup file to restore:',
+      message: 'Select backup file to restore (newest first):',
       choices: backupFiles,
+      pageSize: 15,
     });
+
+    // --- Load and display metadata ---
+    let backupMetadata: BackupMetadata;
+    try {
+      backupMetadata = this.backupService.loadBackupMetadata(backupFile);
+      console.log('\n--- Backup Metadata ---');
+      console.log(`Source Connection: ${backupMetadata.source}`);
+      console.log(`Database:          ${backupMetadata.database || 'N/A'}`);
+      console.log(`Created At:        ${new Date(backupMetadata.timestamp).toLocaleString()}`); // More readable date
+      console.log(`Selection Mode:    ${backupMetadata.selectionMode}`);
+      if (backupMetadata.selectionMode === 'include' && backupMetadata.includedCollections?.length > 0) {
+        console.log(`Included Collections: ${backupMetadata.includedCollections.join(', ')}`);
+      } else if (
+        backupMetadata.selectionMode === 'exclude' &&
+        Array.isArray(backupMetadata.excludedCollections) &&
+        backupMetadata.excludedCollections?.length > 0
+      ) {
+        console.log(`Excluded Collections: ${backupMetadata?.excludedCollections?.join(', ')}`);
+      }
+      console.log('-----------------------\n');
+    } catch (error: any) {
+      // Log the error and re-throw or handle differently if needed
+      console.error(`\nError loading metadata for ${backupFile}: ${error.message}`);
+      // Re-throwing allows the main process to catch it
+      throw new Error(`Failed to load metadata for selected backup: ${error.message}`);
+    }
+    // --- End Metadata Display ---
 
     // Ask user to select target database
     const { target } = await inquirer.prompt({
@@ -149,6 +180,7 @@ export class PromptService {
       backupFile,
       target,
       options: { drop },
+      // backupMetadata, // Uncomment if needed to return metadata
     };
   }
 
@@ -289,10 +321,11 @@ export class PromptService {
 
     // Preview command
     if (selectionMode !== 'all' && collections.length > 0) {
-      const dateTime = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
-      const archiveFilename = this.config.filenameFormat
-        .replace('{{datetime}}', dateTime)
-        .replace('{{source}}', source.name);
+      // Use the new utility function for preview timestamp
+      const now = new Date();
+      const { date: dateOnly, datetime: dateTime } = getFormattedTimestamps(now);
+
+      const archiveFilename = formatFilename(this.config.filenameFormat, dateOnly, dateTime, source.name);
 
       const archivePath = path.join(this.config.backupDir, archiveFilename);
 

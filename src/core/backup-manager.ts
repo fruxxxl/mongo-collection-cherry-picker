@@ -108,10 +108,6 @@ export class BackupManager {
     }
   }
 
-  async listBackups(): Promise<void> {
-    // ... код без изменений ...
-  }
-
   async manageBackupPresets(): Promise<void> {
     const selectedPresetAction = await this.promptService.managePresets();
 
@@ -149,9 +145,5 @@ export class BackupManager {
     } catch (error: any) {
       spinner.fail(`Error creating backup with preset "${preset.name}": ${error.message}`);
     }
-  }
-
-  async createBackupPreset(): Promise<void> {
-    // ... код без изменений ...
   }
 }

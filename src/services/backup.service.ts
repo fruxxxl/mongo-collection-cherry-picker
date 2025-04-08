@@ -3,8 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
-
-import { formatFilename } from '../utils/formatter';
+import { formatFilename, getFormattedTimestamps } from '../utils/formatter';
 
 /**
  * Handles the creation and management of MongoDB backups using mongodump.
@@ -40,8 +39,12 @@ export class BackupService {
     excludedCollections: string[],
     selectionMode: 'all' | 'include' | 'exclude',
   ): Promise<string> {
-    const date = new Date().toISOString().split('T')[0];
-    const filename = formatFilename(this.config.filenameFormat, date, source.name);
+    // Use the new utility function to get formatted timestamps
+    const now = new Date();
+    const { date, datetime } = getFormattedTimestamps(now);
+
+    // Use the formatter with the generated date and datetime
+    const filename = formatFilename(this.config.filenameFormat, date, datetime, source.name);
     const backupDir = path.resolve(this.config.backupDir);
 
     if (!fs.existsSync(backupDir)) {
@@ -218,9 +221,9 @@ export class BackupService {
 
   /**
    * Retrieves a list of backup archive files (.gz) from the configured backup directory.
-   * Files are sorted by name in descending order (newest first).
+   * Files are sorted by modification time in descending order (newest first).
    *
-   * @returns An array of backup filenames found in the backup directory.
+   * @returns An array of backup filenames found in the backup directory, sorted newest first.
    */
   getBackupFiles(): string[] {
     const backupDir = path.resolve(this.config.backupDir);
@@ -230,11 +233,25 @@ export class BackupService {
     }
 
     try {
-      return fs
+      const filesWithStats = fs
         .readdirSync(backupDir)
         .filter((file) => file.endsWith('.gz'))
-        .sort()
-        .reverse();
+        .map((file) => {
+          try {
+            const filePath = path.join(backupDir, file);
+            const stats = fs.statSync(filePath);
+            return { file, mtimeMs: stats.mtimeMs }; // Get modification time in milliseconds
+          } catch (statError: any) {
+            console.warn(`Could not get stats for file ${file}: ${statError.message}`);
+            return { file, mtimeMs: 0 }; // Assign 0 time if stats fail, placing it last
+          }
+        });
+
+      // Sort by modification time, descending (newest first)
+      filesWithStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+      // Return only the filenames
+      return filesWithStats.map((item) => item.file);
     } catch (error: any) {
       console.error(`Error reading backup directory ${backupDir}: ${error.message}`);
       return [];
