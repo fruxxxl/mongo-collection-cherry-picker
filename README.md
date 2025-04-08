@@ -1,174 +1,241 @@
 # MongoDB Collection Cherry Picker 🍒
 
-A powerful CLI tool for managing MongoDB database backups with fine-grained collection selection and preset management capabilities.
+A powerful CLI tool for managing MongoDB database backups with fine-grained collection selection, preset management, and SSH support.
 
 ## 🚀 Overview
 
-MongoDB Collection Cherry Picker allows you to easily create and restore database backups with precise control over which collections to include or exclude. It provides both interactive and non-interactive modes, making it suitable for both manual operations and automated scripts.
+MongoDB Collection Cherry Picker allows you to easily create and restore database backups with precise control over which collections to include or exclude. It supports both local and remote MongoDB instances (via SSH tunnel), provides interactive and non-interactive modes, and allows saving common configurations as presets, making it suitable for both manual operations and automated scripts.
 
 ## ✨ Features
 
-- 💾 Create MongoDB database backups with collection filtering
-- 🔄 Restore databases from backup archives with flexible options:
-  - Optional drop of existing collections before restore
-  - Precise control over restoration process
-- 📋 Three selection modes: all collections, include specific collections, or exclude specific collections
-- 🔌 Support for multiple database connections and profiles
-- 🖥️ Interactive command-line interface with guided workflows
-- 🤖 Non-interactive mode for automation and scripts
-- 💾 Save commonly used backup and restore configurations as presets
-- 📝 Customizable backup filename formats
-- 🗜️ Automatic GZ compression of backups
-- 🔒 Support for authentication and SSL
+-   💾 **Selective Backups:** Create MongoDB backups choosing `all` collections, `including` specific ones, or `excluding` specific ones.
+-   🔄 **Flexible Restores:** Restore databases from backup archives.
+    -   Optionally drop existing collections in the target database before restore.
+    -   Restore across different databases (e.g., production backup to staging database).
+-   🔌 **Multiple Connections:** Manage configurations for various MongoDB instances (local, remote, different auth).
+-   🔒 **SSH Tunnel Support:** Perform backups and restores on remote MongoDB instances accessible only via SSH.
+-   🖥️ **Interactive Mode:** User-friendly prompts guide you through backup, restore, and preset management.
+-   🤖 **Non-Interactive Mode:** Use command-line arguments for automation and scripting.
+-   📋 **Presets:** Define, save, and reuse common backup configurations (source, collections, mode).
+-   📝 **Metadata:** Each backup archive (`.gz`) includes a companion JSON file (`.gz.json`) detailing the backup parameters (source, database, collections included/excluded, mode, timestamp).
+-   📄 **Customizable Filenames:** Configure the naming format for backup files.
+-   🗜️ **Gzip Compression:** Backups are automatically compressed.
 
 Demo video:
 [![Watch the video](https://img.youtube.com/vi/_wcxIeL43xk/0.jpg)](https://youtu.be/_wcxIeL43xk?si=GsXqrSNrsxDtTtKi)
 
-
 ## 📥 Installation
 
 ```bash
+# Clone the repository (if you haven't already)
+# git clone <repository-url>
+# cd mongo-collection-cherry-picker
+
 # Install dependencies
 npm install
 
+# Compile TypeScript (optional, for running with node)
+npm run build
 ```
 
-## ⚙️ Configuration
+## ⚙️ Configuration (`config.json`)
 
-Create a `config.json` file in your project root:
+Create or modify the `config.json` file in your project root:
 
 ```json
 {
-  "backupDir": "backups",
-  "filenameFormat": "backup_{{datetime}}_{{source}}.gz",
-  "mongodumpPath": "mongodump",
-  "mongorestorePath": "mongorestore",
+  "backupDir": "./backups", // Directory to store backup files
+  "filenameFormat": "backup_{{date}}_{{source}}.gz", // Format for backup filenames. Placeholders: {{date}}, {{source}}
+  "mongodumpPath": "mongodump", // Optional: Path to mongodump executable
+  "mongorestorePath": "mongorestore", // Optional: Path to mongorestore executable
   "connections": [
     {
-      "name": "db1",
-      "database": "db1",
-      "host": "localhost",
-      "port": 27017
+      "name": "localDev", // Unique name for the connection
+      "uri": "mongodb://localhost:27017/", // MongoDB connection URI (preferred)
+      "database": "devdb" // Default database for this connection
     },
     {
-      "name": "db2",
-      "uri": "mongodb://somehost:27017/",
-      "database": "db2",
+      "name": "stagingServer",
+      "uri": "mongodb://user:pass@remote.host:27017/stagingdb?authSource=admin", // URI for the remote DB
+      "database": "stagingdb", // Database name (required if not in URI for some operations)
+      "ssh": { // SSH Tunnel Configuration
+        "host": "ssh.yourserver.com", // SSH host
+        "port": 22,                   // SSH port
+        "username": "ssh_user",       // SSH username
+        "privateKey": "~/.ssh/id_rsa" // Path to your SSH private key (~/ is expanded)
+        // "passphrase": "your_key_passphrase" // Optional: if your key is protected
+      }
+    },
+    {
+      "name": "prodReadOnly",
+       // Example without URI - using host/port/auth
+      "host": "prod.db.internal",
+      "port": 27017,
+      "database": "production",
+      "username": "readonly_user",
+      "password": "secure_password",
+      "authenticationDatabase": "admin"
+    }
+    // Add more connections as needed
+  ],
+  "backupPresets": [ // Optional: Define reusable backup configurations
+    {
+      "name": "Core Staging Data", // Unique name for the preset
+      "sourceName": "stagingServer", // Name of the connection to use
+      "description": "Backup essential collections from staging",
+      "selectionMode": "include", // 'include', 'exclude', or 'all'
+      "collections": [ // Required for 'include' and 'exclude' modes
+        "users",
+        "products",
+        "orders"
+      ],
+      "createdAt": "2023-10-27T10:30:00Z" // Managed by the tool
+    },
+    {
+      "name": "Full Staging Without Logs",
+      "sourceName": "stagingServer",
+      "selectionMode": "exclude",
+      "collections": ["logs", "audit_trails"],
+      "createdAt": "2023-10-27T11:00:00Z"
     }
   ]
 }
 ```
 
+**Configuration Fields:**
+
+*   `backupDir`: Path where backup archives (`.gz`) and metadata (`.gz.json`) files are stored.
+*   `filenameFormat`: Template for naming backup files.
+    *   `{{date}}`: Replaced with the current date (YYYY-MM-DD).
+    *   `{{source}}`: Replaced with the `name` of the source connection.
+*   `mongodumpPath`, `mongorestorePath`: Optional: Specify the full path to the executables if not in system PATH.
+*   `connections`: Array of MongoDB connection configurations.
+    *   `name`: Unique identifier.
+    *   `uri`: MongoDB connection string (recommended). Takes precedence over host/port/auth fields.
+    *   `database`: Target database name.
+    *   `host`, `port`, `username`, `password`, `authenticationDatabase`/`authSource`: Used if `uri` is not provided.
+    *   `ssh`: Optional object for connections requiring an SSH tunnel (`host`, `port`, `username`, `privateKey`, `passphrase`).
+*   `backupPresets`: Optional array of predefined backup configurations.
+    *   `name`: Unique identifier.
+    *   `sourceName`: The `name` of the connection to use.
+    *   `selectionMode`: `'include'`, `'exclude'`, or `'all'`.
+    *   `collections`: Array of collection names (used for `include`/`exclude`).
+    *   `createdAt`: Timestamp (managed by the tool).
+
 ## 🖥️ Usage
+
+Run the tool using `ts-node` (for development) or `node` (after building).
+
+```bash
+# Using ts-node
+npx ts-node src/main.ts [arguments]
+
+# Using compiled code
+node dist/main.js [arguments]
+```
 
 ### Interactive Mode
 
-To start the application in interactive mode (with guided prompts):
+Start the tool without arguments for a guided experience:
 
 ```bash
-npx mongo-cherry-picker
+npx ts-node src/main.ts
+# or
+node dist/main.js
 ```
 
-The interactive menu will guide you through:
-1. Creating a backup
-2. Restoring from a backup
-   - Select backup file
-   - Choose target database
-   - Configure restore options (drop existing collections, etc.)
-3. Creating backup presets
-4. Managing existing presets
+The menu allows you to:
+1.  Create a backup (selecting connection, mode, collections).
+2.  Restore from a backup (selecting backup file, target connection, options like `--drop`).
+3.  Create backup presets.
+4.  Manage (view/delete) existing presets.
 
 ### Non-Interactive Mode
 
-For scripting and automation, use command-line arguments:
+Use command-line arguments for automation:
 
 ```bash
-# Create a full backup
-npx mongo-cherry-picker --mode backup --source "db1" --backupMode all
+# Backup all collections from 'localDev'
+node dist/main.js --mode backup --source localDev --backupMode all
 
-# Restore a backup with 'drop' option enabled
-npx mongo-cherry-picker --mode restore --backupFile backup_20230415_db1.gz --target "db2" --drop
+# Backup specific collections ('users', 'orders') from 'stagingServer' (via SSH)
+node dist/main.js --mode backup --source stagingServer --backupMode include --collections users,orders
+
+# Backup all collections EXCEPT 'logs' from 'stagingServer'
+node dist/main.js --mode backup --source stagingServer --backupMode exclude --collections logs
+
+# Run a predefined backup preset
+node dist/main.js --mode backup --preset "Core Staging Data"
+
+# Restore a backup file to 'localDev', dropping target collections first
+node dist/main.js --mode restore --backupFile ./backups/backup_YYYY-MM-DD_stagingServer.gz --target localDev --drop
 ```
 
-## 📋 Working with Presets
+## 💾 Backup Metadata (`<backup_file_name>.gz.json`)
 
-Presets allow you to save common backup or restore configurations for quick reuse.
+Each backup archive (e.g., `backup_2023-10-28_stagingServer.gz`) has a corresponding JSON metadata file (e.g., `backup_2023-10-28_stagingServer.gz.json`).
 
-### Creating a Backup Preset
-
-In interactive mode:
-1. Select "Create backup preset" from the main menu
-2. Enter a name for your preset
-3. Select the source database
-4. Choose the selection mode (all, include, or exclude)
-5. If applicable, select collections to include or exclude
-6. Confirm creation
-
-Example backup preset in config.json:
 ```json
-"backupPresets": [
-  {
-    "name": "Core Data Only",
-    "sourceName": "Local Development",
-    "description": "Backup only essential collections",
-    "selectionMode": "include",
-    "collections": ["users", "products", "orders"],
-    "createdAt": "2023-04-15T10:30:00Z"
-  },
-  {
-    "name": "Full Backup Without Logs",
-    "sourceName": "Production Database",
-    "description": "All collections except logs",
-    "selectionMode": "exclude",
-    "collections": ["logs", "sessions", "analytics"],
-    "createdAt": "2023-04-15T11:45:00Z"
-  }
-]
+{
+  "source": "stagingServer",       // Name of the source connection
+  "database": "stagingdb",         // Name of the database backed up
+  "includedCollections": [         // Populated if selectionMode='include'
+    "users",
+    "products"
+  ],
+  "selectionMode": "include",      // Mode used ('all', 'include', 'exclude')
+  "excludedCollections": [],       // Populated if selectionMode='exclude'
+  "timestamp": 1698480000000,      // Unix timestamp (ms) of backup creation
+  "date": "2023-10-28T08:00:00.000Z", // ISO 8601 timestamp
+  "archivePath": "backup_2023-10-28_stagingServer.gz" // Relative path of the archive
+}
 ```
-
+This metadata aids the restore process (especially for database name mapping) and documents the backup contents.
 
 ## 🛠️ Command Line Arguments
 
-| Argument        | Description                                         | Example                              |
-| --------------- | --------------------------------------------------- | ------------------------------------ |
-| `--mode`        | Operation mode: backup or restore                   | `--mode backup`                      |
-| `--interactive` | Force interactive mode                              | `--interactive`                      |
-| `--source`      | Source connection name                              | `--source "Local MongoDB"`           |
-| `--backupMode`  | Collection selection mode: all, include, or exclude | `--backupMode include`               |
-| `--collections` | Comma-separated list of collections                 | `--collections users,products`       |
-| `--backupFile`  | Path to backup file for restore                     | `--backupFile ./backups/mybackup.gz` |
-| `--target`      | Target connection name for restore                  | `--target "Test Environment"`        |
-| `--drop`        | Drop existing collections before restore            | `--drop`                             |
-| `--configPath`  | Custom path to config file                          | `--configPath ./custom-config.json`  |
+| Argument        | Description                                                    | Example                              |
+| --------------- | -------------------------------------------------------------- | ------------------------------------ |
+| `--mode`        | Operation mode: `backup` or `restore`                          | `--mode backup`                      |
+| `--interactive` | Force interactive mode                                         | `--interactive`                      |
+| `--source`      | **Backup:** Source connection name (required if no preset)     | `--source stagingServer`             |
+| `--backupMode`  | **Backup:** Collection mode: `all`, `include`, `exclude`       | `--backupMode include`               |
+| `--collections` | **Backup:** Comma-separated collections (for include/exclude)  | `--collections users,products`       |
+| `--preset`      | **Backup:** Name of backup preset to use                       | `--preset "Core Staging Data"`       |
+| `--backupFile`  | **Restore:** Path to backup file (`.gz`)                       | `--backupFile ./backups/mybackup.gz` |
+| `--target`      | **Restore:** Target connection name                            | `--target localDev`                  |
+| `--drop`        | **Restore:** Drop target collections before restore (optional) | `--drop`                             |
+| `--configPath`  | Custom path to `config.json` file (optional)                   | `--configPath ./custom-config.json`  |
 
 ## 🏗️ Project Structure
 
 ```
 mongo-collection-cherry-picker/
+├── backups/                  # Default backup storage directory
 ├── src/
 │   ├── core/
-│   │   ├── mongodb-app.ts         # Main application class
-│   │   ├── backup-manager.ts      # Backup operations
-│   │   ├── restore-manager.ts     # Restore operations
-│   │   └── preset-manager.ts      # Preset management
+│   │   ├── backup-manager.ts   # Backup workflow logic
+│   │   ├── restore-manager.ts  # Restore workflow logic
+│   │   └── preset-manager.ts   # Preset management logic
 │   ├── services/
-│   │   ├── mongodb.service.ts     # MongoDB connection handling
-│   │   ├── backup.service.ts      # Backup creation logic
-│   │   └── restore.service.ts     # Restore logic
+│   │   ├── mongodb.service.ts  # MongoDB connection/query handling
+│   │   ├── backup.service.ts   # mongodump execution logic
+│   │   └── restore.service.ts  # mongorestore execution logic
 │   ├── utils/
-│   │   ├── index.ts               # Utility functions
-│   │   └── prompts.ts            # Interactive prompts
+│   │   ├── formatter.ts        # Filename formatting
+│   │   └── prompts.ts          # Interactive prompts logic
 │   ├── types/
-│   │   └── index.ts               # TypeScript type definitions
-│   └── index.ts                   # Entry point
-├── config.json                    # Configuration file
+│   │   └── index.ts            # TypeScript type definitions
+│   └── main.ts                 # Application entry point (CLI parsing)
+├── config.json               # Default configuration file
+├── README.md                 # This file
 └── package.json
 ```
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the `LICENSE` file for details (if one exists).
