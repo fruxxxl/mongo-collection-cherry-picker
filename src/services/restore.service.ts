@@ -250,7 +250,7 @@ export class RestoreService {
       const simpleCountMatch = stdout.match(/(\d+)\s+documents/);
       if (simpleCountMatch) {
         console.log(
-          'Restore output doesn\'t explicitly state success/failure counts, but no errors detected in stderr.',
+          'Restore output doesn`t explicitly state success/failure counts, but no errors detected in stderr.',
         );
       } else if (!stderr.trim()) {
         console.log('Restore process finished without explicit counts, and stderr is empty.');
@@ -262,11 +262,4 @@ export class RestoreService {
     else console.log(`Documents failed:   ${totalFailed}`);
     console.log('---------------------\n');
   }
-
-  // Optional: Keep or remove checkRestoreResults if needed
-  /*
-  private async checkRestoreResults(target: ConnectionConfig): Promise<void> {
-    // ... implementation ...
-  }
-  */
 }

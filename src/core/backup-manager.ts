@@ -37,7 +37,7 @@ export class BackupManager {
     const spinner = ora('Starting interactive backup...').start();
     try {
       // 1. Stop spinner before prompts
-      spinner.stop(); // <-- Остановить спиннер перед вызовом promptForBackup
+      spinner.stop();
 
       // Get user intent from prompts
       const {
@@ -45,10 +45,10 @@ export class BackupManager {
         selectedCollections,
         excludedCollections,
         selectionMode: intendedMode,
-      } = await this.promptService.promptForBackup(); // <-- Вызвать промпты без активного спиннера
+      } = await this.promptService.promptForBackup();
 
       // Restart spinner after prompts are done
-      spinner.start(`Preparing backup for ${source.name}...`); // <-- Перезапустить спиннер
+      spinner.start(`Preparing backup for ${source.name}...`);
 
       let actualMode = intendedMode;
       let actualSelected: string[] = []; // Collections for --collection flag (usually empty now)
@@ -56,18 +56,6 @@ export class BackupManager {
 
       // 2. Transform 'include' intent to 'exclude' command
       if (intendedMode === 'include') {
-        // Stop spinner again if we need to fetch collections (handled inside promptForBackup now)
-        // spinner.stop(); // Not needed here anymore as promptForBackup handles its own spinner for fetching
-        // spinner.start(`Fetching all collections from ${source.name} to calculate exclusions...`); // Moved inside promptForBackup
-
-        // Fetching logic is now inside promptForBackup, just need the results
-        // Need to adjust logic here if promptForBackup doesn't fetch anymore
-        // Assuming promptForBackup still returns the necessary data based on its internal logic
-
-        // Re-calculate exclusions based on prompt results (if needed, or trust promptService)
-        // This calculation might be redundant if promptService handles it, BUT
-        // the transformation logic to 'exclude' mode MUST happen here in the manager.
-
         spinner.text = `Fetching all collections from ${source.name} to calculate exclusions...`; // Keep spinner text update
         // Ensure mongoService is available or handle connection within this method if needed
         await this.mongoService.connect(source); // Connect here before calculating exclusions
@@ -289,7 +277,7 @@ export class BackupManager {
       // 2. Transform 'include' intent to 'exclude' command
       if (intendedMode === 'include') {
         if (!collectionsList || collectionsList.length === 0) {
-          throw new Error("Backup mode is 'include' but no collections were specified.");
+          throw new Error('Backup mode is «include» but no collections were specified.');
         }
         spinner.text = `Fetching all collections from ${source.name} to calculate exclusions...`;
         await this.mongoService.connect(source);

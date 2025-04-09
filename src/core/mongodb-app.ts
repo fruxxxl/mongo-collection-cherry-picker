@@ -1,4 +1,3 @@
-/* eslint-disable quotes */
 import inquirer from 'inquirer';
 import type { AppConfig, CommandLineArgs } from '../types'; // Use type import
 import { loadConfig } from '../utils';
@@ -158,10 +157,10 @@ export class MongoDBApp {
       if ((backupMode === 'include' || backupMode === 'exclude') && collections.length === 0) {
         // Allow exclude mode with empty collections (means exclude nothing, effectively 'all')
         if (backupMode === 'include') {
-          console.error("Mode 'include' requires a list of collections via --collections.");
+          console.error('Mode «include» requires a list of collections via --collections.');
           return;
         } else {
-          console.log("Info: Mode 'exclude' with no collections specified; defaulting to backing up all collections.");
+          console.log('Info: Mode «exclude» with no collections specified; defaulting to backing up all collections.');
           // Let backupFromArgs handle this case, it might switch to 'all' internally
         }
       }
