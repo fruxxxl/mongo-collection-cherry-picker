@@ -77,19 +77,33 @@ export interface BackupMetadata {
   archivePath: string;
   /** Optional: The name of the preset used to create this backup. */
   presetName?: string;
+  /** ISO 8601 string representation of the start time used for the --query filter based on _id, if applied. */
+  queryStartTime?: string;
 }
 
 export interface CommandLineArgs {
+  /** Path to the configuration file. */
+  configPath: string;
+  /** Flag indicating if the application should run in interactive mode. */
   interactive?: boolean;
-  mode?: string;
+  /** The primary operation mode ('backup' or 'restore'), usually undefined in interactive mode. */
+  mode?: 'backup' | 'restore';
+  /** Name of the source connection (for backup). */
   source?: string;
+  /** Backup mode ('all', 'include', 'exclude'). */
   backupMode?: 'all' | 'include' | 'exclude';
+  /** List of collections for include/exclude mode. */
   collections?: string[];
-  backupFile?: string;
-  target?: string;
-  configPath?: string;
-  drop?: boolean;
+  /** Name of the backup or restore preset to use. */
   preset?: string;
+  /** Specific backup file to restore. */
+  backupFile?: string;
+  /** Name of the target connection (for restore). */
+  target?: string;
+  /** Flag to drop target collections before restoring. */
+  drop?: boolean;
+  /** Filter backup by _id timestamp (ISO 8601 or relative like "1d", "7d", "3h"). */
+  sinceTime?: string;
 }
 
 export interface ConfigType {

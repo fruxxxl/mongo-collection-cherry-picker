@@ -10,7 +10,7 @@ export const SSHConfigSchema = z.object({
 
 export const ConnectionConfigSchema = z.object({
   name: z.string(),
-  uri: z.string(),
+  uri: z.string().optional(),
   database: z.string(),
   host: z.string().optional(),
   port: z.number().optional(),

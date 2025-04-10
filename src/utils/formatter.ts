@@ -1,21 +1,17 @@
+import { format } from 'date-fns';
+
 /**
  * Generates formatted date and datetime strings from a Date object.
  *
  * @param now - The Date object to format.
  * @returns An object containing the formatted date (`DD-MM-YYYY`) and datetime (`DD-MM-YYYY_HH-mm`) strings.
  */
-export function getFormattedTimestamps(now: Date): { date: string; datetime: string } {
-  const year = now.getFullYear();
-  const month = (now.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed
-  const day = now.getDate().toString().padStart(2, '0');
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  // Seconds are excluded as requested
-
-  const date = `${day}-${month}-${year}`; // DD-MM-YYYY
-  const datetime = `${day}-${month}-${year}_${hours}-${minutes}`; // DD-MM-YYYY_HH-mm
-
-  return { date, datetime };
+export function getFormattedTimestamps(date: Date): { date: string; time: string; datetime: string } {
+  return {
+    date: format(date, 'dd-MM-yyyy'),
+    time: format(date, 'HH-mm'),
+    datetime: format(date, 'yyyy-MM-dd_HH-mm-ss'), // Added a combined datetime
+  };
 }
 
 /**
@@ -28,13 +24,31 @@ export function getFormattedTimestamps(now: Date): { date: string; datetime: str
  * @param sourceName - The name of the connection source.
  * @returns The formatted filename string.
  */
-export function formatFilename(formatString: string, date: string, datetime: string, sourceName: string): string {
-  let filename = formatString;
-  // Replace datetime first if present
-  filename = filename.replace('{{datetime}}', datetime);
-  // Replace date (useful if datetime wasn't in the format string)
-  filename = filename.replace('{{date}}', date);
-  filename = filename.replace('{{source}}', sourceName);
-  // Add more replacements here if needed in the future
-  return filename;
+export function formatFilename(
+  formatString: string,
+  dateStr: string,
+  timeStr: string,
+  datetimeStr: string,
+  sourceName: string,
+): string {
+  return formatString
+    .replace('{date}', dateStr)
+    .replace('{time}', timeStr)
+    .replace('{datetime}', datetimeStr)
+    .replace('{source}', sourceName);
+}
+
+/**
+ * Generates the minimal ObjectId hex string corresponding to a given timestamp.
+ * Used for creating $gte queries based on time.
+ * @param date - The date object representing the start time.
+ * @returns A 24-character hex string representing the ObjectId.
+ */
+export function objectIdFromTimestamp(date: Date): string {
+  // Get seconds since epoch
+  const timestampSeconds = Math.floor(date.getTime() / 1000);
+  // Convert to 4-byte hex string (8 characters)
+  const hexTimestamp = timestampSeconds.toString(16).padStart(8, '0');
+  // Append 16 zeros for the rest of the ObjectId parts (machine, pid, counter)
+  return hexTimestamp + '0000000000000000';
 }

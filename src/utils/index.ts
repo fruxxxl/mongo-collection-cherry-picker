@@ -1,28 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AppConfig } from '../types';
+import type { AppConfig, CommandLineArgs } from '../types';
 import { AppConfigSchema } from '../config/config.schema';
 
 /**
  * Parses command line arguments passed to the application.
  * Supports arguments for configuration path, mode (backup/restore),
- * source/target connections, backup options, and interactive mode flag.
+ * source/target connections, backup options, time filter, and interactive mode flag.
  *
- * @returns An object containing the parsed command line arguments.
+ * @returns An object conforming to the CommandLineArgs interface.
  */
-export function parseCommandLineArgs(): {
-  configPath: string;
-  mode?: 'backup' | 'restore';
-  source?: string;
-  backupMode?: 'all' | 'include' | 'exclude';
-  collections?: string[];
-  preset?: string;
-  backupFile?: string;
-  target?: string;
-  drop?: boolean;
-  interactive?: boolean;
-  nonInteractive?: boolean;
-} {
+export function parseCommandLineArgs(): CommandLineArgs {
   const args = process.argv.slice(2);
   let configPath = './config.json';
   let mode: 'backup' | 'restore' | undefined;
@@ -34,7 +22,7 @@ export function parseCommandLineArgs(): {
   let target: string | undefined;
   let drop: boolean = false;
   let interactive: boolean | undefined = undefined;
-  let nonInteractive: boolean = false;
+  let sinceTime: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -102,23 +90,54 @@ export function parseCommandLineArgs(): {
       continue;
     }
 
-    if (arg === '--interactive') {
+    if (arg === '--interactive' || arg === 'interactive') {
       interactive = true;
-      nonInteractive = false;
       continue;
     }
-    if (arg === '--no-interactive' || arg === '--non-interactive') {
-      interactive = false;
-      nonInteractive = true;
+
+    if (arg.startsWith('--since-time=')) {
+      sinceTime = arg.split('=')[1];
       continue;
+    }
+    if (arg === '--since-time' && i + 1 < args.length) {
+      sinceTime = args[i + 1];
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      console.warn(`Warning: Unknown argument detected: ${arg}`);
     }
   }
 
-  const finalInteractive = interactive === undefined ? true : interactive;
+  let finalInteractive: boolean;
+  if (interactive === true) {
+    finalInteractive = true;
+  } else if (interactive === false) {
+    finalInteractive = false;
+  } else {
+    finalInteractive = !(mode || preset);
+  }
+
+  if (!finalInteractive) {
+    if (mode === 'backup' && !source && !preset) {
+      console.error('Error: --source or --preset is required for backup mode in non-interactive run.');
+      process.exit(1);
+    }
+    if (mode === 'restore' && !target && !preset) {
+      console.error('Error: --target or --preset is required for restore mode in non-interactive run.');
+      process.exit(1);
+    }
+    if (mode === 'restore' && !backupFile && !preset) {
+      console.error('Error: --backupFile is required for restore mode when not using a preset.');
+      process.exit(1);
+    }
+  }
 
   return {
     configPath,
-    mode,
+    mode: finalInteractive ? undefined : mode,
+    interactive: finalInteractive,
     source,
     backupMode,
     collections,
@@ -126,8 +145,7 @@ export function parseCommandLineArgs(): {
     backupFile,
     target,
     drop,
-    interactive: finalInteractive,
-    nonInteractive,
+    sinceTime,
   };
 }
 

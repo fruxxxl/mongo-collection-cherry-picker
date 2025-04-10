@@ -1,19 +1,18 @@
 import 'source-map-support/register';
-
 import { parseCommandLineArgs } from './utils/index';
-
 import { MongoDBApp } from './core/mongodb-app';
 
 async function main() {
   try {
-    const args = parseCommandLineArgs();
+    const commandArgs = parseCommandLineArgs();
 
-    const app = new MongoDBApp(args);
+    const app = new MongoDBApp(commandArgs);
     await app.run();
-  } catch (error) {
-    console.error('Run error:', error instanceof Error ? error.message : String(error));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('\nApplication Error:', message);
     process.exit(1);
   }
 }
 
-main().catch(console.error);
+main();

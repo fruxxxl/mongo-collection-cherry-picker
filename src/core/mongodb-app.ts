@@ -6,6 +6,7 @@ import { RestoreManager } from './restore-manager';
 import { PresetManager } from './preset-manager';
 import { PromptService } from '../utils/prompts';
 import { BackupService } from '../services/backup.service'; // Needed for restore prompt
+import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } from 'date-fns'; // Import date-fns
 
 /**
  * Main application class orchestrating backup, restore, and preset operations.
@@ -129,6 +130,52 @@ export class MongoDBApp {
     }
   }
 
+  /** Parses the --since-time argument string into a Date object */
+  private parseSinceTime(sinceArg: string): Date | undefined {
+    // Try parsing as ISO 8601 first
+    let date = parseISO(sinceArg);
+    if (isValid(date)) {
+      console.log(`Parsed --since-time as ISO date: ${date.toISOString()}`);
+      return date;
+    }
+
+    // Try parsing relative durations (e.g., "1d", "7d", "3h", "1w")
+    const durationMatch = sinceArg.match(/^(\d+)([dhwMy])$/i); // Match d, h, w, M, y
+    if (durationMatch) {
+      const value = parseInt(durationMatch[1], 10);
+      const unit = durationMatch[2].toLowerCase();
+      const now = new Date();
+      try {
+        // Wrap date-fns calls in try-catch
+        if (unit === 'd') {
+          date = subDays(now, value);
+        } else if (unit === 'h') {
+          date = subHours(now, value);
+        } else if (unit === 'w') {
+          date = subWeeks(now, value);
+        } else if (unit === 'M') {
+          date = subMonths(now, value);
+        } else if (unit === 'y') {
+          date = subYears(now, value);
+        }
+        if (isValid(date)) {
+          console.log(`Parsed --since-time as ${value}${unit} ago: ${date.toISOString()}`);
+          return date;
+        } else {
+          throw new Error('Resulting date is invalid');
+        }
+      } catch (e) {
+        console.error(`Error calculating relative date for ${sinceArg}: ${e}`);
+        return undefined;
+      }
+    }
+
+    console.error(
+      `Error: Invalid format for --since-time argument: "${sinceArg}". Use ISO 8601 or relative duration (e.g., "1d", "3h", "2w", "1M").`,
+    );
+    return undefined; // Indicate parsing failure
+  }
+
   /**
    * Performs a backup operation based on non-interactive arguments.
    * Handles presets or direct source/collection specification.
@@ -144,38 +191,56 @@ export class MongoDBApp {
       console.log(`Using backup preset: ${preset.name}`);
       await this.backupManager.useBackupPreset(preset);
     } else if (this.args.source) {
-      // Non-interactive call using arguments
-      const backupMode = this.args.mode || 'all';
+      const backupMode = this.args.backupMode || 'all';
       const collections = this.args.collections || [];
 
-      // Validate mode
+      // --- Parse --since-time argument ---
+      let startTime: Date | undefined = undefined;
+      if (this.args.sinceTime) {
+        startTime = this.parseSinceTime(this.args.sinceTime);
+        if (!startTime) {
+          return; // Stop processing if time format is invalid
+        }
+
+        // --- VALIDATION for --since-time ---
+        if (backupMode !== 'include') {
+          console.error('Error: --since-time can only be used with --backupMode=include.');
+          return; // Exit
+        }
+        if (collections.length !== 1) {
+          console.error('Error: --since-time requires exactly one collection specified via --collections.');
+          return; // Exit
+        }
+        console.log(`Validated: --since-time will be applied to collection: ${collections[0]}`);
+        // --- End VALIDATION ---
+      }
+      // --- End Parse --since-time ---
+
+      // Validate mode (basic check, specific validation for since-time done above)
       if (!['all', 'include', 'exclude'].includes(backupMode)) {
         console.error(`Invalid backup mode: ${backupMode}. Must be 'all', 'include', or 'exclude'.`);
         return;
       }
-      // Validate collections for include/exclude modes
-      if ((backupMode === 'include' || backupMode === 'exclude') && collections.length === 0) {
-        // Allow exclude mode with empty collections (means exclude nothing, effectively 'all')
+      // Validate collections for include/exclude modes (excluding the since-time case already handled)
+      if (!startTime && (backupMode === 'include' || backupMode === 'exclude') && collections.length === 0) {
         if (backupMode === 'include') {
-          console.error('Mode «include» requires a list of collections via --collections.');
+          console.error('Mode "include" requires a list of collections via --collections.');
           return;
         } else {
-          console.log('Info: Mode «exclude» with no collections specified; defaulting to backing up all collections.');
-          // Let backupFromArgs handle this case, it might switch to 'all' internally
+          console.log('Info: Mode "exclude" with no collections specified; defaulting to backing up all collections.');
         }
       }
 
       try {
-        // Call the correct method for non-interactive backup from args
+        // Pass arguments to the manager
         await this.backupManager.backupFromArgs(
           this.args.source,
-          backupMode as 'all' | 'include' | 'exclude', // Cast after validation
+          backupMode as 'all' | 'include' | 'exclude', // Type assertion is okay after validation
           collections,
+          startTime, // Pass potentially undefined startTime
         );
       } catch (error: any) {
-        // Error is logged within backupFromArgs, just indicate failure here
         console.error('\n✖ Backup command failed.');
-        // Optionally exit with error code: process.exit(1);
       }
     } else {
       console.error('Error: No source specified for backup.');

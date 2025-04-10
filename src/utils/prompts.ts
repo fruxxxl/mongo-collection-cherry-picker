@@ -4,6 +4,7 @@ import { BackupService } from '../services/backup.service';
 import { MongoDBService } from '../services/mongodb.service';
 import { savePresets } from '../utils';
 import ora from 'ora';
+import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, subYears } from 'date-fns';
 
 /**
  * Provides services for interacting with the user via command-line prompts (inquirer).
@@ -33,6 +34,7 @@ export class PromptService {
     selectedCollections: string[];
     excludedCollections: string[];
     selectionMode: 'all' | 'include' | 'exclude';
+    startTime?: Date;
   }> {
     console.log('DEBUG: Entering promptForBackup...');
 
@@ -78,6 +80,7 @@ export class PromptService {
 
     let selectedCollections: string[] = [];
     let excludedCollections: string[] = [];
+    let startTime: Date | undefined = undefined;
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
       console.log('DEBUG: Mode requires fetching collections.');
@@ -95,19 +98,32 @@ export class PromptService {
 
         if (collections.length === 0) {
           console.log('No collections found in the source database.');
-          return { source, selectedCollections: [], excludedCollections: [], selectionMode: 'all' };
+          return { source, selectedCollections: [], excludedCollections: [], selectionMode: 'all', startTime };
         }
 
         console.log('DEBUG: Prompting for collections...');
         if (selectionMode === 'include') {
-          const { selected } = await inquirer.prompt<{ selected: string[] }>({
-            type: 'checkbox',
-            name: 'selected',
-            message: 'Select collections to INCLUDE in backup:',
-            choices: collections.map((coll) => ({ name: coll, value: coll, checked: false })),
-            validate: (answer) => answer.length > 0 || 'Please select at least one collection to include.',
-          });
-          selectedCollections = selected;
+          const { chosenCollections } = await inquirer.prompt<{ chosenCollections: string[] }>([
+            {
+              type: 'checkbox',
+              name: 'chosenCollections',
+              message: 'Select collections to INCLUDE in backup:',
+              choices: collections.map((coll) => ({ name: coll, value: coll })),
+              validate: (answer) => {
+                if (answer.length === 0) {
+                  return 'Please select at least one collection to include.';
+                }
+                return true;
+              },
+            },
+          ]);
+          selectedCollections = chosenCollections;
+          if (selectedCollections.length === 1) {
+            console.log('DEBUG: Single collection included, prompting for time filter...');
+            startTime = await this.promptForTimeFilter();
+          } else if (selectedCollections.length > 1) {
+            console.log('DEBUG: Multiple collections included, time filter (--query) is not applicable.');
+          }
         } else {
           const { excluded } = await inquirer.prompt<{ excluded: string[] }>({
             type: 'checkbox',
@@ -125,7 +141,89 @@ export class PromptService {
     }
 
     console.log('DEBUG: Returning from promptForBackup.');
-    return { source, selectedCollections, excludedCollections, selectionMode };
+    return { source, selectedCollections, excludedCollections, selectionMode, startTime };
+  }
+
+  /**
+   * Helper function to prompt for the time filter choice.
+   * @returns The selected start time Date object, or undefined if no filter is chosen.
+   */
+  private async promptForTimeFilter(): Promise<Date | undefined> {
+    console.log('DEBUG: Prompting for time filter...');
+    const { timeFilterChoice } = await inquirer.prompt<{ timeFilterChoice: string }>([
+      {
+        type: 'list',
+        name: 'timeFilterChoice',
+        message: 'Apply time filter? (Backup documents created/updated after a certain time based on _id):',
+        choices: [
+          { name: 'No filter (Full collection backup)', value: 'none' },
+          new inquirer.Separator('-- Relative --'),
+          { name: 'Since 1 Hour Ago', value: '1h' },
+          { name: 'Since 6 Hours Ago', value: '6h' },
+          { name: 'Since 12 Hours Ago', value: '12h' },
+          { name: 'Since 1 Day Ago', value: '1d' },
+          { name: 'Since 3 Days Ago', value: '3d' },
+          { name: 'Since 1 Week Ago', value: '1w' },
+          { name: 'Since 1 Month Ago', value: '1M' },
+          new inquirer.Separator('-- Absolute --'),
+          { name: 'Custom Date/Time', value: 'custom' },
+          new inquirer.Separator(),
+        ],
+        default: 'none',
+        pageSize: 15,
+      },
+    ]);
+
+    let startTime: Date | undefined = undefined;
+    const now = new Date();
+
+    if (timeFilterChoice === 'none' || timeFilterChoice === 'custom') {
+      // Handle 'none' and 'custom' below
+    } else {
+      const match = timeFilterChoice.match(/^(\d+)([hdwMy])$/);
+      if (match) {
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        try {
+          if (unit === 'h') startTime = subHours(now, value);
+          else if (unit === 'd') startTime = subDays(now, value);
+          else if (unit === 'w') startTime = subWeeks(now, value);
+          else if (unit === 'M') startTime = subMonths(now, value);
+          else if (unit === 'y') startTime = subYears(now, value);
+          console.log(`DEBUG: Relative time filter set to ${value}${unit} ago: ${startTime?.toISOString()}`);
+        } catch (e) {
+          console.error(`Error calculating relative date for ${timeFilterChoice}: ${e}`);
+          startTime = undefined;
+        }
+      }
+    }
+
+    if (timeFilterChoice === 'custom') {
+      const { customTimeString } = await inquirer.prompt<{ customTimeString: string }>([
+        {
+          type: 'input',
+          name: 'customTimeString',
+          message: 'Enter start date/time (ISO 8601 format, e.g., YYYY-MM-DDTHH:mm:ssZ):',
+          validate: (input: string) => {
+            const parsedDate = parseISO(input);
+            return isValid(parsedDate) || 'Invalid date format. Please use ISO 8601 (e.g., 2023-10-27T10:00:00Z).';
+          },
+        },
+      ]);
+      try {
+        startTime = parseISO(customTimeString);
+        if (!isValid(startTime)) throw new Error('Invalid date parsed');
+        console.log(`DEBUG: Custom time filter set to: ${startTime.toISOString()}`);
+      } catch (e) {
+        console.error(`Error parsing custom date string "${customTimeString}": ${e}`);
+        startTime = undefined;
+      }
+    }
+
+    if (!startTime) {
+      console.log('DEBUG: No time filter applied.');
+    }
+    return startTime;
   }
 
   /**
