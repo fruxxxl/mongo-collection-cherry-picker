@@ -4,7 +4,7 @@ import { loadConfig } from '../utils';
 import { BackupManager } from './backup-manager';
 import { RestoreManager } from './restore-manager';
 import { PresetManager } from './preset-manager';
-import { PromptService } from '../utils/prompts';
+import { PromptService } from './prompt-service';
 import { BackupService } from '../services/backup.service'; // Needed for restore prompt
 import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } from 'date-fns'; // Import date-fns
 
@@ -35,7 +35,7 @@ export class MongoDBApp {
     this.promptService = new PromptService(this.config); // Pass config
     this.backupManager = new BackupManager(this.config, this.promptService);
     this.restoreManager = new RestoreManager(this.config, backupService, this.promptService); // Pass services
-    this.presetManager = new PresetManager(this.config, this.backupManager, this.restoreManager); // Pass dependencies
+    this.presetManager = new PresetManager(this.config, this.backupManager); // Pass dependencies
   }
 
   /**
@@ -56,57 +56,64 @@ export class MongoDBApp {
    * Runs the application in interactive mode, prompting the user for actions.
    */
   private async runInteractiveMode(): Promise<void> {
-    try {
-      const { action } = await inquirer.prompt({
-        type: 'list',
-        name: 'action',
-        message: 'Select action:',
-        choices: [
-          { name: 'Create Backup', value: 'backup' },
-          { name: 'Restore from Backup', value: 'restore' },
-          { name: 'Create Backup Preset', value: 'preset_create' }, // Renamed for clarity
-          { name: 'Manage Presets (Use/View/Delete)', value: 'preset_manage' }, // Renamed for clarity
-          new inquirer.Separator(),
-          { name: 'Exit', value: 'exit' },
-        ],
-        loop: false,
-      });
+    let exit = false;
+    while (!exit) {
+      try {
+        const { action } = await inquirer.prompt({
+          type: 'list',
+          name: 'action',
+          message: 'Select action:',
+          choices: [
+            { name: 'Create Backup', value: 'backup' },
+            { name: 'Restore from Backup', value: 'restore' },
+            { name: 'Create Backup Preset', value: 'preset_create' }, // Renamed for clarity
+            { name: 'Manage Presets (Use/View/Delete)', value: 'preset_manage' }, // Renamed for clarity
+            new inquirer.Separator(),
+            { name: 'Exit', value: 'exit' },
+          ],
+          loop: false,
+        });
 
-      switch (action) {
-        case 'backup':
-          await this.backupManager.backupDatabase();
-          break;
-        case 'restore':
-          await this.restoreFromBackup(); // Use dedicated method
-          break;
-        case 'preset_create':
-          await this.presetManager.createBackupPreset();
-          break;
-        case 'preset_manage':
-          await this.presetManager.managePresets();
-          break;
-        case 'exit':
-          console.log('Exiting application.');
-          return; // Exit the loop/application
+        switch (action) {
+          case 'backup':
+            await this.backupManager.backupDatabase();
+            break;
+          case 'restore':
+            await this.restoreFromBackup(); // Use dedicated method
+            break;
+          case 'preset_create':
+            await this.presetManager.createBackupPreset();
+            break;
+          case 'preset_manage':
+            const selectedPresetAction = await this.promptService.managePresets();
+            if (selectedPresetAction?.type === 'backup') {
+              await this.backupManager.useBackupPreset(selectedPresetAction.preset);
+            }
+            break;
+          case 'exit':
+            exit = true;
+            break;
+          default:
+            console.log('Invalid action selected.');
+        }
+
+        if (!exit) {
+          const { continueAction } = await inquirer.prompt({
+            type: 'confirm',
+            name: 'continueAction',
+            message: 'Do you want to perform another action?',
+            default: true,
+          });
+          if (!continueAction) {
+            exit = true;
+          }
+        }
+      } catch (error: any) {
+        console.error(`\n✖ Interactive mode error: ${error.message}`);
+        exit = true; // Exit on error
       }
-
-      // Ask to perform another action after completion
-      const { continueAction } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'continueAction',
-        message: 'Do you want to perform another action?',
-        default: true,
-      });
-
-      if (continueAction) {
-        await this.runInteractiveMode(); // Loop back
-      } else {
-        console.log('Exiting application.');
-      }
-    } catch (error: any) {
-      console.error(`\n✖ Interactive mode error: ${error.message}`);
-      // Optionally, ask if user wants to try again or exit
     }
+    console.log('Exiting application.');
   }
 
   /**

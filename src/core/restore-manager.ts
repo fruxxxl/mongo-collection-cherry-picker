@@ -4,7 +4,7 @@ import inquirer from 'inquirer';
 import fs from 'fs';
 import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
-import type { PromptService } from '../utils/prompts';
+import type { PromptService } from './prompt-service';
 import type { AppConfig, RestorePreset, ConnectionConfig, BackupMetadata } from '../types/index';
 
 /**

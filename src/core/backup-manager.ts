@@ -1,11 +1,12 @@
 import ora from 'ora';
 import path from 'path'; // Needed for metadata path
 import fs from 'fs'; // Needed for saving metadata
+import { parseISO, isValid } from 'date-fns'; // Import parseISO and isValid
 
 import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
 
-import { PromptService } from '../utils/prompts';
+import { PromptService } from './prompt-service';
 import { AppConfig, BackupPreset, BackupMetadata, ConnectionConfig } from '../types/index';
 
 /**
@@ -138,8 +139,7 @@ export class BackupManager {
       const metadata: BackupMetadata = {
         source: source.name,
         database: source.database,
-        selectionMode: intendedMode, // Store the *user's* intended mode
-        // Store user's intended collections based on their mode
+        selectionMode: intendedMode,
         includedCollections: intendedMode === 'include' ? collectionsListForMetadata : undefined,
         excludedCollections: intendedMode === 'exclude' ? collectionsListForMetadata : undefined,
         timestamp: now.getTime(),
@@ -160,8 +160,6 @@ export class BackupManager {
         // If spinner was already stopped (e.g., error during prompts), just log
         console.error(`Interactive backup failed: ${error.message}`);
       }
-      // Log the error details if helpful
-      // console.error(error);
     } finally {
       // Ensure connection is closed even on error during prompts/backup
       if (source && this.mongoService.getClient()) {
@@ -186,95 +184,125 @@ export class BackupManager {
   }
 
   /**
-   * Creates a backup using a predefined preset configuration.
-   * @param preset - The backup preset to use.
+   * Executes a backup using a predefined preset.
+   * @param preset - The backup preset configuration.
    */
   async useBackupPreset(preset: BackupPreset): Promise<void> {
-    const spinner = ora(`Starting backup using preset: ${preset.name}...`).start();
+    const spinner = ora(`Loading preset "${preset.name}"...`).start();
+    let source: ConnectionConfig | undefined;
+    let startTime: Date | undefined; // Variable to hold parsed start time
+
     try {
-      const source = this.config.connections.find((c) => c.name === preset.sourceName);
+      source = this.config.connections.find((c) => c.name === preset.sourceName);
       if (!source) {
-        throw new Error(`Source connection "${preset.sourceName}" defined in preset "${preset.name}" not found.`);
-      }
-      if (!source.database) {
-        // Database name is crucial for fetching all collections if needed
         throw new Error(
-          `Source connection "${preset.sourceName}" must have a 'database' field defined for preset usage.`,
+          `Source connection "${preset.sourceName}" defined in preset "${preset.name}" not found in config.`,
         );
       }
 
-      spinner.text = `Starting backup using preset: ${preset.name}...`;
+      spinner.text = `Preparing backup for preset "${preset.name}" (Source: ${source.name})...`;
 
-      const intendedMode = preset.selectionMode;
-      const intendedCollections = preset.collections || []; // Collections defined in the preset
-
-      let actualMode = intendedMode;
+      // Initialize actualMode to satisfy the compiler.
+      // The subsequent logic will assign the correct value based on conditions.
+      let actualMode: 'all' | 'include' | 'exclude' = 'all';
       let actualSelected: string[] = [];
       let actualExcluded: string[] = [];
+      const collections = preset.collections || [];
 
-      // Transform 'include' intent to 'exclude' command
-      if (intendedMode === 'include') {
-        spinner.text = `Fetching all collections from ${source.name} to calculate exclusions for preset ${preset.name}...`;
-        await this.mongoService.connect(source);
-        const allCollections = await this.mongoService.getCollections(source.database);
-        await this.mongoService.close();
-        spinner.text = `Calculating exclusions for preset ${preset.name}...`;
-
-        actualExcluded = allCollections.filter((coll) => !intendedCollections.includes(coll));
-        actualMode = 'exclude';
-        actualSelected = [];
-
-        if (actualExcluded.length === allCollections.length && intendedCollections.length > 0) {
-          console.warn(
-            `\nWarning: None of the collections specified in preset "${preset.name}" (${intendedCollections.join(', ')}) were found in the database ${source.database}. The backup might be empty if other collections exist.`,
+      // --- Determine mode, collections, and startTime ---
+      if (preset.queryStartTime && preset.selectionMode === 'include' && collections.length === 1) {
+        // --- Time Filter Case ---
+        startTime = parseISO(preset.queryStartTime);
+        if (!isValid(startTime)) {
+          spinner.warn(
+            `Invalid queryStartTime format "${preset.queryStartTime}" in preset "${preset.name}". Ignoring time filter.`,
           );
-        } else if (actualExcluded.length === 0 && allCollections.length > 0) {
-          console.log(
-            `\nInfo: All collections in ${source.database} were selected by preset "${preset.name}". Switching to 'all' mode for backup efficiency.`,
-          );
-          actualMode = 'all';
+          startTime = undefined;
+          // Fallback logic will run below in the `if (!startTime)` block
         } else {
-          console.log(`\nInfo: Preset "${preset.name}" will exclude collections: ${actualExcluded.join(', ')}`);
+          actualMode = 'include';
+          actualSelected = collections;
+          actualExcluded = [];
+          spinner.info(
+            `Preset "${preset.name}" uses time filter for collection "${actualSelected[0]}" (>= ${startTime.toISOString()}).`,
+          );
+          // Skip the standard include->exclude conversion logic
         }
-      } else if (intendedMode === 'exclude') {
-        actualExcluded = intendedCollections;
-        actualMode = 'exclude';
-        actualSelected = [];
-      } else {
-        // 'all' mode
-        actualMode = 'all';
-        actualSelected = [];
-        actualExcluded = [];
       }
 
-      spinner.text = `Running backup process for preset ${preset.name}...`;
-      // Call BackupService with transformed parameters
-      const backupFilename = await this.backupService.createBackup(source, actualSelected, actualExcluded, actualMode);
+      // --- Standard Mode Determination (if no valid time filter) ---
+      if (!startTime) {
+        // Only run if startTime was not successfully set above
+        if (preset.selectionMode === 'include') {
+          await this.mongoService.connect(source);
+          const allCollections = await this.mongoService.getCollections(source.database);
+          await this.mongoService.close(); // Close connection after listing
+
+          actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
+
+          if (actualExcluded.length === 0 && allCollections.length > 0) {
+            spinner.info(
+              `Preset "${preset.name}": All collections were specified for inclusion. Switching to 'all' mode.`,
+            );
+            actualMode = 'all';
+          } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
+            spinner.warn(
+              `Preset "${preset.name}": Included collections do not exist in the source. Backing up nothing.`,
+            );
+            // Or potentially switch to 'all' mode? For now, let it proceed (will likely backup nothing).
+            actualMode = 'exclude'; // Technically excluding everything
+          } else {
+            actualMode = 'exclude';
+            spinner.info(
+              `Preset "${preset.name}": Mode 'include' transformed to 'exclude' (${actualExcluded.length} collections).`,
+            );
+          }
+        } else if (preset.selectionMode === 'exclude') {
+          actualMode = 'exclude';
+          actualExcluded = collections;
+          spinner.info(`Preset "${preset.name}": Mode 'exclude' (${actualExcluded.length} collections).`);
+        } else {
+          actualMode = 'all';
+          actualExcluded = [];
+          spinner.info(`Preset "${preset.name}": Mode 'all'.`);
+        }
+      }
+      // --- End Determination ---
+
+      spinner.start(`Running backup process for preset "${preset.name}"...`);
+      const backupFilename = await this.backupService.createBackup(
+        source,
+        actualSelected,
+        actualExcluded,
+        actualMode,
+        startTime,
+      );
 
       spinner.text = `Saving metadata for preset backup ${backupFilename}...`;
-      // Save metadata using the *preset's* intent
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
         database: source.database,
-        selectionMode: intendedMode, // Use preset's mode
-        includedCollections: intendedMode === 'include' ? intendedCollections : undefined, // Use preset's collections
-        excludedCollections: intendedMode === 'exclude' ? intendedCollections : undefined, // Use preset's collections
+        selectionMode: preset.selectionMode,
+        includedCollections: preset.selectionMode === 'include' ? collections : undefined,
+        excludedCollections: preset.selectionMode === 'exclude' ? collections : undefined,
         timestamp: now.getTime(),
         date: now.toISOString(),
-        archivePath: path.basename(backupFilename), // Store only the filename
-        presetName: preset.name, // Optionally store the preset name used
+        archivePath: path.basename(backupFilename),
+        presetName: preset.name,
+        queryStartTime: startTime?.toISOString(),
       };
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
       spinner.succeed(
-        `Backup from preset "${preset.name}" created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`,
+        `Preset backup "${preset.name}" created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`,
       );
     } catch (error: any) {
-      spinner.fail(`Backup from preset failed: ${error.message}`);
+      spinner.fail(`Backup from preset "${preset.name}" failed: ${error.message}`);
+      throw error; // Re-throw for handling in mongodb-app.ts
     } finally {
-      // Ensure connection is closed if mongoService was used
+      // Ensure connection is closed if it was opened
       if (this.mongoService.getClient()) {
         await this.mongoService.close();
       }
@@ -331,7 +359,7 @@ export class BackupManager {
               actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
 
               if (actualExcluded.length === 0 && allCollections.length > 0) {
-                console.log("Info: All collections were specified for inclusion. Switching to 'all' mode.");
+                console.log('Info: All collections were specified for inclusion. Switching to all mode.');
                 actualMode = 'all';
               } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
                 console.warn(
@@ -397,7 +425,10 @@ export class BackupManager {
       // Ensure connection is closed even on error
       if (this.mongoService.getClient()) {
         await this.mongoService.close();
-        console.log(`[${source.name}] Connection closed.`);
+      }
+      // Ensure spinner is stopped
+      if (spinner.isSpinning) {
+        spinner.stop();
       }
     }
   }

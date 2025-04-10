@@ -253,7 +253,7 @@ export class BackupService {
         let errorOutput = '';
         sshProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`SSH/mongodump stderr: ${errorChunk.trim()}`);
+          console.warn(`SSH/mongodump: ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 
@@ -292,7 +292,7 @@ export class BackupService {
         let errorOutput = '';
         dumpProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`mongodump stderr: ${errorChunk.trim()}`);
+          console.warn(`mongodump: ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 

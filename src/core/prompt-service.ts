@@ -4,7 +4,7 @@ import { BackupService } from '../services/backup.service';
 import { MongoDBService } from '../services/mongodb.service';
 import { savePresets } from '../utils';
 import ora from 'ora';
-import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, subYears } from 'date-fns';
+import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, formatISO, format } from 'date-fns';
 
 /**
  * Provides services for interacting with the user via command-line prompts (inquirer).
@@ -36,14 +36,10 @@ export class PromptService {
     selectionMode: 'all' | 'include' | 'exclude';
     startTime?: Date;
   }> {
-    console.log('DEBUG: Entering promptForBackup...');
-
     if (!this.config.connections || this.config.connections.length === 0) {
-      console.error('No connections found in the configuration.');
       throw new Error('No connections found in the configuration.');
     }
 
-    console.log('DEBUG: Prompting for source...');
     const { sourceName } = await inquirer.prompt<{ sourceName: string }>([
       {
         type: 'list',
@@ -55,13 +51,9 @@ export class PromptService {
     const source = this.config.connections.find((conn) => conn.name === sourceName);
 
     if (!source) {
-      console.error(`Source connection "${sourceName}" not found in the configuration.`);
       throw new Error(`Source connection "${sourceName}" not found in the configuration.`);
     }
 
-    console.log(`DEBUG: Source selected: ${sourceName}`);
-
-    console.log('DEBUG: Prompting for mode...');
     const { selectionModeChoice } = await inquirer.prompt<{ selectionModeChoice: string }>([
       {
         type: 'list',
@@ -76,32 +68,24 @@ export class PromptService {
       },
     ]);
     const selectionMode = selectionModeChoice as 'all' | 'include' | 'exclude';
-    console.log(`DEBUG: Mode selected: ${selectionMode}`);
 
     let selectedCollections: string[] = [];
     let excludedCollections: string[] = [];
     let startTime: Date | undefined = undefined;
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
-      console.log('DEBUG: Mode requires fetching collections.');
       let collections: string[] = [];
       const fetchSpinner = ora(`Fetching collections from ${source.name}...`).start();
       try {
-        console.log('DEBUG: Connecting to MongoDB...');
         await this.mongoService.connect(source);
-        console.log('DEBUG: Connected. Fetching collections...');
         collections = await this.mongoService.getCollections(source.database);
-        console.log(`DEBUG: Fetched ${collections.length} collections. Closing connection...`);
         await this.mongoService.close();
-        console.log('DEBUG: Connection closed.');
         fetchSpinner.succeed(`Fetched ${collections.length} collections from ${source.name}.`);
 
         if (collections.length === 0) {
-          console.log('No collections found in the source database.');
           return { source, selectedCollections: [], excludedCollections: [], selectionMode: 'all', startTime };
         }
 
-        console.log('DEBUG: Prompting for collections...');
         if (selectionMode === 'include') {
           const { chosenCollections } = await inquirer.prompt<{ chosenCollections: string[] }>([
             {
@@ -119,10 +103,8 @@ export class PromptService {
           ]);
           selectedCollections = chosenCollections;
           if (selectedCollections.length === 1) {
-            console.log('DEBUG: Single collection included, prompting for time filter...');
             startTime = await this.promptForTimeFilter();
           } else if (selectedCollections.length > 1) {
-            console.log('DEBUG: Multiple collections included, time filter (--query) is not applicable.');
           }
         } else {
           const { excluded } = await inquirer.prompt<{ excluded: string[] }>({
@@ -133,23 +115,20 @@ export class PromptService {
           });
           excludedCollections = excluded;
         }
-        console.log('DEBUG: Collections selected.');
       } catch (error: any) {
-        console.error('DEBUG: Error during collection fetch/prompt:', error);
         throw error;
       }
     }
 
-    console.log('DEBUG: Returning from promptForBackup.');
     return { source, selectedCollections, excludedCollections, selectionMode, startTime };
   }
 
   /**
    * Helper function to prompt for the time filter choice.
+   * @param defaultValue - Optional default date to pre-fill the custom input.
    * @returns The selected start time Date object, or undefined if no filter is chosen.
    */
-  private async promptForTimeFilter(): Promise<Date | undefined> {
-    console.log('DEBUG: Prompting for time filter...');
+  private async promptForTimeFilter(defaultValue?: Date): Promise<Date | undefined> {
     const { timeFilterChoice } = await inquirer.prompt<{ timeFilterChoice: string }>([
       {
         type: 'list',
@@ -170,60 +149,65 @@ export class PromptService {
           new inquirer.Separator(),
         ],
         default: 'none',
-        pageSize: 15,
       },
     ]);
 
-    let startTime: Date | undefined = undefined;
     const now = new Date();
+    let startTime: Date | undefined = undefined;
 
-    if (timeFilterChoice === 'none' || timeFilterChoice === 'custom') {
-      // Handle 'none' and 'custom' below
-    } else {
-      const match = timeFilterChoice.match(/^(\d+)([hdwMy])$/);
-      if (match) {
-        const value = parseInt(match[1], 10);
-        const unit = match[2];
-        try {
-          if (unit === 'h') startTime = subHours(now, value);
-          else if (unit === 'd') startTime = subDays(now, value);
-          else if (unit === 'w') startTime = subWeeks(now, value);
-          else if (unit === 'M') startTime = subMonths(now, value);
-          else if (unit === 'y') startTime = subYears(now, value);
-          console.log(`DEBUG: Relative time filter set to ${value}${unit} ago: ${startTime?.toISOString()}`);
-        } catch (e) {
-          console.error(`Error calculating relative date for ${timeFilterChoice}: ${e}`);
-          startTime = undefined;
-        }
-      }
-    }
-
-    if (timeFilterChoice === 'custom') {
-      const { customTimeString } = await inquirer.prompt<{ customTimeString: string }>([
-        {
-          type: 'input',
-          name: 'customTimeString',
-          message: 'Enter start date/time (ISO 8601 format, e.g., YYYY-MM-DDTHH:mm:ssZ):',
-          validate: (input: string) => {
-            const parsedDate = parseISO(input);
-            return isValid(parsedDate) || 'Invalid date format. Please use ISO 8601 (e.g., 2023-10-27T10:00:00Z).';
-          },
-        },
-      ]);
-      try {
-        startTime = parseISO(customTimeString);
-        if (!isValid(startTime)) throw new Error('Invalid date parsed');
-        console.log(`DEBUG: Custom time filter set to: ${startTime.toISOString()}`);
-      } catch (e) {
-        console.error(`Error parsing custom date string "${customTimeString}": ${e}`);
+    switch (timeFilterChoice) {
+      case 'none':
         startTime = undefined;
-      }
+        break;
+      case '1h':
+        startTime = subHours(now, 1);
+        break;
+      case '6h':
+        startTime = subHours(now, 6);
+        break;
+      case '12h':
+        startTime = subHours(now, 12);
+        break;
+      case '1d':
+        startTime = subDays(now, 1);
+        break;
+      case '3d':
+        startTime = subDays(now, 3);
+        break;
+      case '1w':
+        startTime = subWeeks(now, 1);
+        break;
+      case '1M':
+        startTime = subMonths(now, 1);
+        break;
+      case 'custom':
+        const { customDate } = await inquirer.prompt<{ customDate: string }>([
+          {
+            type: 'input',
+            name: 'customDate',
+            message: 'Enter custom start date/time (YYYY-MM-DD HH:mm:ss or ISO format):',
+            default: defaultValue ? format(defaultValue, 'yyyy-MM-dd HH:mm:ss') : undefined,
+            validate: (input: string) => {
+              const parsed = parseISO(input);
+              if (isValid(parsed)) return true;
+              const customParsed = parseISO(input.replace(' ', 'T'));
+              if (isValid(customParsed)) return true;
+              return 'Invalid date/time format. Use YYYY-MM-DD HH:mm:ss or ISO 8601.';
+            },
+            filter: (input: string) => input.trim(),
+          },
+        ]);
+        startTime = parseISO(customDate.includes('T') ? customDate : customDate.replace(' ', 'T'));
+        break;
+      default:
+        startTime = undefined;
     }
 
-    if (!startTime) {
-      console.log('DEBUG: No time filter applied.');
+    if (startTime && isValid(startTime)) {
+      return startTime;
+    } else if (timeFilterChoice !== 'none') {
     }
-    return startTime;
+    return undefined;
   }
 
   /**
@@ -400,12 +384,9 @@ export class PromptService {
 
     if (selectionMode !== 'all') {
       try {
-        console.log(`Connecting to ${source.name} to fetch collection list...`);
-        const mongoService = new MongoDBService(this.config);
-        await mongoService.connect(source);
-        const allCollections = await mongoService.getCollections(source.database);
-        await mongoService.close();
-        console.log(`[${source.name}] Connection closed.`);
+        await this.mongoService.connect(source);
+        const allCollections = await this.mongoService.getCollections(source.database);
+        await this.mongoService.close();
 
         if (allCollections.length === 0) {
           console.log(
@@ -546,5 +527,155 @@ export class PromptService {
         console.log('Action cancelled.');
         return undefined;
     }
+  }
+
+  /**
+   * Prompts the user for details needed to create or update a backup preset.
+   * @param existingPreset - Optional existing preset data for editing.
+   * @returns A promise that resolves with the new or updated preset configuration.
+   */
+  async promptForPreset(existingPreset?: BackupPreset): Promise<BackupPreset> {
+    console.log(existingPreset ? '\n--- Editing Backup Preset ---' : '\n--- Creating New Backup Preset ---');
+
+    const nameAnswer = await inquirer.prompt<{ name: string }>([
+      {
+        type: 'input',
+        name: 'name',
+        message: 'Preset name:',
+        default: existingPreset?.name,
+        validate: (input: string) => (input.trim() ? true : 'Preset name cannot be empty.'),
+      },
+    ]);
+    const name = nameAnswer.name.trim();
+
+    const sourceChoices = this.config.connections.map((c) => ({ name: `${c.name} (${c.database})`, value: c }));
+    const sourceAnswer = await inquirer.prompt<{ source: ConnectionConfig }>([
+      {
+        type: 'list',
+        name: 'source',
+        message: 'Select source connection:',
+        choices: sourceChoices,
+        default: sourceChoices.findIndex((c) => c.value.name === existingPreset?.sourceName),
+      },
+    ]);
+    const source = sourceAnswer.source;
+
+    const modeAnswer = await inquirer.prompt<{ selectionMode: 'all' | 'include' | 'exclude' }>([
+      {
+        type: 'list',
+        name: 'selectionMode',
+        message: 'Select collection mode:',
+        choices: ['all', 'include', 'exclude'],
+        default: existingPreset?.selectionMode || 'all',
+      },
+    ]);
+    const selectionMode = modeAnswer.selectionMode;
+
+    let collections: string[] = existingPreset?.collections || [];
+    let queryStartTime: string | undefined = existingPreset?.queryStartTime;
+
+    if (selectionMode === 'include' || selectionMode === 'exclude') {
+      const spinner = ora(`Fetching collections from ${source.name}...`).start();
+      try {
+        await this.mongoService.connect(source);
+        const allCollections = await this.mongoService.getCollections(source.database);
+        spinner.succeed(`Fetched ${allCollections.length} collections from ${source.name}.`);
+
+        const collectionAnswer = await inquirer.prompt<{ collections: string[] }>([
+          {
+            type: 'checkbox',
+            name: 'collections',
+            message: `Select collections to ${selectionMode === 'include' ? 'INCLUDE' : 'EXCLUDE'}:`,
+            choices: allCollections,
+            default: collections,
+            validate: (answer: string[]) => {
+              if (selectionMode === 'include' && answer.length === 0) {
+                return 'Please select at least one collection to include.';
+              }
+              return true;
+            },
+          },
+        ]);
+        collections = collectionAnswer.collections;
+
+        if (selectionMode === 'include') {
+          if (collections.length === 1) {
+            console.log('\n--- Time Filter (Optional) ---');
+            console.log('Applies only when using this preset.');
+            const applyTimeFilterAnswer = await inquirer.prompt<{ apply: boolean }>([
+              {
+                type: 'confirm',
+                name: 'apply',
+                message: `Apply time filter to collection "${collections[0]}"? (Backup documents created/updated after a specific time)`,
+                default: !!queryStartTime,
+              },
+            ]);
+
+            if (applyTimeFilterAnswer.apply) {
+              const startTimeDate = await this.promptForTimeFilter(
+                queryStartTime ? parseISO(queryStartTime) : undefined,
+              );
+              queryStartTime = startTimeDate ? formatISO(startTimeDate) : undefined;
+              if (queryStartTime) {
+                console.log(`Time filter set to: >= ${queryStartTime}`);
+              } else {
+                console.log('No time filter applied.');
+              }
+            } else {
+              queryStartTime = undefined;
+              console.log('No time filter applied.');
+            }
+          } else if (queryStartTime) {
+            console.log('Info: Time filter cleared because more/less than one collection is selected.');
+            queryStartTime = undefined;
+          }
+        }
+      } catch (error: any) {
+        spinner.fail(`Error fetching collections: ${error.message}`);
+        const { manualCollections } = await inquirer.prompt({
+          type: 'input',
+          name: 'manualCollections',
+          message: `Could not fetch collections. Enter collection names separated by comma to ${selectionMode === 'include' ? 'INCLUDE' : 'EXCLUDE'}:`,
+          default: collections.join(','),
+          validate: (input: string) => {
+            if (selectionMode === 'include' && !input.trim()) {
+              return 'Please enter at least one collection to include.';
+            }
+            return true;
+          },
+        });
+        collections = manualCollections ? manualCollections.split(',').map((c: string) => c.trim()) : [];
+      } finally {
+        if (this.mongoService.getClient()) {
+          await this.mongoService.close();
+        }
+      }
+    } else {
+      collections = [];
+      if (queryStartTime) {
+        console.log('Info: Time filter cleared because mode is not \'include\'.');
+        queryStartTime = undefined;
+      }
+    }
+
+    console.log('\n--- Preset Configuration Summary ---');
+    console.log(`Name: ${name}`);
+    console.log(`Source: ${source.name} (${source.database})`);
+    console.log(`Mode: ${selectionMode}`);
+    if (selectionMode !== 'all') {
+      console.log(`Collections: ${collections.length > 0 ? collections.join(', ') : '(none)'}`);
+    }
+    if (queryStartTime) {
+      console.log(`Time Filter: >= ${queryStartTime}`);
+    }
+
+    return {
+      name,
+      sourceName: source.name,
+      selectionMode,
+      collections,
+      createdAt: existingPreset?.createdAt || formatISO(new Date()),
+      queryStartTime,
+    };
   }
 }

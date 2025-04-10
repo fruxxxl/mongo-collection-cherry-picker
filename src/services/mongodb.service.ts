@@ -381,7 +381,7 @@ export class MongoDBService {
         ssh: undefined,
         options: {
           ...originalOptionsFiltered,
-          directConnection: 'true',
+          // directConnection: 'true',
         },
       };
 

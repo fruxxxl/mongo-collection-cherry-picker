@@ -158,7 +158,7 @@ export class RestoreService {
         let errorOutput = '';
         sshProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`mongorestore stderr (ssh): ${errorChunk.trim()}`);
+          console.warn(`mongorestore (ssh): ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 
@@ -200,7 +200,7 @@ export class RestoreService {
         let errorOutput = '';
         restoreProcess.stderr.on('data', (data) => {
           const errorChunk = data.toString();
-          console.warn(`mongorestore stderr: ${errorChunk.trim()}`);
+          console.warn(`mongorestore: ${errorChunk.trim()}`);
           errorOutput += errorChunk;
         });
 

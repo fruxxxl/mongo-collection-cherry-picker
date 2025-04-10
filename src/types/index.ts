@@ -30,6 +30,7 @@ export interface BackupPreset {
   selectionMode: 'all' | 'include' | 'exclude';
   collections?: string[];
   createdAt: string;
+  queryStartTime?: string;
 }
 
 export interface RestoreOptions {

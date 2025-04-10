@@ -1,9 +1,8 @@
 import inquirer from 'inquirer';
 import { savePresets } from '../utils';
-import { PromptService } from '../utils/prompts';
+import { PromptService } from './prompt-service';
 import { BackupManager } from './backup-manager';
-import { RestoreManager } from './restore-manager';
-import { AppConfig } from '../types/index';
+import { AppConfig, BackupPreset } from '../types/index';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
@@ -12,19 +11,17 @@ export class PresetManager {
   private config: AppConfig;
   private promptService: PromptService;
   private backupManager: BackupManager;
-  private restoreManager: RestoreManager;
 
   /**
    * Creates an instance of PresetManager.
    * @param config - The application configuration.
    * @param backupManager - Manager to execute backups (used for 'Use Preset Now').
-   * @param restoreManager - Manager for restoring from backups.
    */
-  constructor(config: AppConfig, backupManager: BackupManager, restoreManager: RestoreManager) {
+  constructor(config: AppConfig, backupManager: BackupManager) {
     this.config = config;
     this.promptService = new PromptService(config);
     this.backupManager = backupManager;
-    this.restoreManager = restoreManager;
+    this.config.backupPresets = this.config.backupPresets || [];
   }
 
   /**
@@ -35,20 +32,19 @@ export class PresetManager {
   async createBackupPreset(): Promise<void> {
     console.log('\n--- Create New Backup Preset ---');
     try {
-      // Prompt user for preset details
-      const newPreset = await this.promptService.promptForBackupPreset();
+      const newPreset = await this.promptService.promptForPreset();
 
-      // Initialize presets array if it doesn't exist or is null
-      if (!Array.isArray(this.config.backupPresets)) {
-        this.config.backupPresets = [];
+      // Check for duplicate name
+      if (this.config.backupPresets?.some((p) => p.name === newPreset.name)) {
+        console.warn(
+          `Warning: A preset with the name "${newPreset.name}" already exists. Overwriting is not supported via creation. Please edit or delete the existing preset.`,
+        );
+        return;
       }
 
-      // Add the new preset to the configuration object
+      this.config.backupPresets = this.config.backupPresets || [];
       this.config.backupPresets.push(newPreset);
-
-      // Save the updated configuration back to the file
-      savePresets(this.config); // Assumes configPath is handled by savePresets or uses default
-
+      savePresets(this.config);
       console.log(`\n✔ Backup preset "${newPreset.name}" created successfully!`);
 
       // Ask if the user wants to run the new preset right away
@@ -64,9 +60,7 @@ export class PresetManager {
         await this.backupManager.useBackupPreset(newPreset);
       }
     } catch (error: any) {
-      // Catch errors during preset creation or saving
-      console.error(`\n✖ Error creating preset: ${error.message}`);
-      // Log the error, but don't necessarily stop the application unless critical
+      console.error(`\n✖ Error creating backup preset: ${error.message}`);
     }
   }
 
@@ -93,5 +87,13 @@ export class PresetManager {
     } catch (error: any) {
       console.error(`\n✖ Error managing presets: ${error.message}`);
     }
+  }
+
+  /**
+   * Retrieves all backup presets.
+   * @returns An array of backup presets.
+   */
+  getBackupPresets(): BackupPreset[] {
+    return this.config.backupPresets || [];
   }
 }
