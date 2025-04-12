@@ -62,8 +62,9 @@ Create or modify the `config.json` file in your project root:
         "host": "ssh.yourserver.com", // SSH host
         "port": 22,                   // SSH port
         "username": "ssh_user",       // SSH username
-        "privateKey": "~/.ssh/id_rsa" // Path to your SSH private key (~/ is expanded)
-        // "passphrase": "your_key_passphrase" // Optional: if your key is protected
+        "privateKey": "~/.ssh/id_rsa", // Path to your SSH private key (~/ is expanded)
+        "passphrase": "your_key_passphrase", // Optional: if your key is protected
+        "password": "your_password" // Optional: if your key is protected
       }
     },
     {
@@ -115,7 +116,7 @@ Create or modify the `config.json` file in your project root:
     *   `uri`: MongoDB connection string (recommended). Takes precedence over host/port/auth fields.
     *   `database`: Target database name.
     *   `host`, `port`, `username`, `password`, `authenticationDatabase`/`authSource`: Used if `uri` is not provided.
-    *   `ssh`: Optional object for connections requiring an SSH tunnel (`host`, `port`, `username`, `privateKey`, `passphrase`).
+    *   `ssh`: Optional object for connections requiring an SSH tunnel (`host`, `port`, `username`, `privateKey`, `passphrase`, `password`).
 *   `backupPresets`: Optional array of predefined backup configurations.
     *   `name`: Unique identifier.
     *   `sourceName`: The `name` of the connection to use.

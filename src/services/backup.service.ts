@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
+import { NodeSSH } from 'node-ssh';
 import type { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
 import { formatFilename, getFormattedTimestamps, objectIdFromTimestamp } from '../utils/formatter';
 
@@ -198,26 +199,43 @@ export class BackupService {
 
     try {
       if (source.ssh) {
-        // --- SSH Execution ---
-        console.log(`Executing mongodump via SSH to ${source.ssh.host}...`);
+        // --- SSH Execution with NodeSSH ---
+        console.log(`Executing mongodump via SSH to ${source.ssh.host} using node-ssh...`);
+        const ssh = new NodeSSH();
 
         const remoteArgs = [...baseArgs];
         if (queryValue) {
-          const remoteQueryValue = `'${queryValue}'`;
-          remoteArgs.push('--query', remoteQueryValue);
-          console.log(`DEBUG: Adding remote query args: --query ${remoteQueryValue}`);
+          // node-ssh's execCommand handles shell escaping better, but be cautious with complex queries
+          // Ensure the outer quotes are suitable for the remote shell
+          remoteArgs.push('--query', `'${queryValue}'`);
         }
-        remoteArgs.push('--archive');
+        remoteArgs.push('--archive'); // Output to stdout
 
         const remoteCommandParts = [mongodumpPath];
         remoteArgs.forEach((arg) => {
-          if (arg.includes(' ') || arg.includes('"') || arg.includes("'") || arg.includes('$') || arg.includes('=')) {
-            if (arg.startsWith("'") && arg.endsWith("'") && arg.includes('{') && arg.includes('}')) {
+          // Basic heuristic for quoting arguments for the remote shell
+          if (
+            arg.includes(' ') ||
+            arg.includes('"') ||
+            arg.includes("'") ||
+            arg.includes('$') ||
+            arg.includes('=') ||
+            arg.includes('{')
+          ) {
+            // If it looks like a JSON query, keep the single quotes.
+            if (arg.startsWith("'") && arg.endsWith("'") && arg.includes('{')) {
               remoteCommandParts.push(arg);
+              // If it's a password argument, quote it carefully.
+            } else if (arg.startsWith('--password=') || arg.startsWith('--username=')) {
+              const [key, ...valueParts] = arg.split('=');
+              const value = valueParts.join('=');
+              // Use double quotes and escape internal double quotes and dollars/backticks if any
+              remoteCommandParts.push(`${key}="${value.replace(/["$`\\]/g, '\\$&')}"`);
             } else if (arg.startsWith('--uri="')) {
-              remoteCommandParts.push(arg);
+              remoteCommandParts.push(arg); // Assume URI is already quoted if needed
             } else {
-              remoteCommandParts.push(`"${arg.replace(/"/g, '\\"')}"`);
+              // General case: double quote and escape internal double quotes/dollars/backticks
+              remoteCommandParts.push(`"${arg.replace(/["$`\\]/g, '\\$&')}"`);
             }
           } else {
             remoteCommandParts.push(arg);
@@ -225,57 +243,147 @@ export class BackupService {
         });
         const remoteCommand = remoteCommandParts.join(' ');
 
-        commandStringForLog = `ssh ... "${remoteCommand}" > ${filePath}`;
+        commandStringForLog = `ssh ... "${remoteCommand}" > ${filePath}`; // For logging purposes
         console.log(
-          `Executing remote mongodump command via SSH:\n${remoteCommand}\n(Output piped locally to ${path.basename(filePath)})`,
+          `Prepared remote mongodump command for node-ssh:\n${remoteCommand.replace(/--password="[^"]+"/, '--password="***"')}\n(Output will be piped locally to ${path.basename(filePath)})`,
         );
 
-        const privateKeyPath = source.ssh.privateKey.startsWith('~')
-          ? path.join(os.homedir(), source.ssh.privateKey.substring(1))
-          : source.ssh.privateKey;
+        const sshConnectionOptions: Parameters<NodeSSH['connect']>[0] = {
+          host: source.ssh.host,
+          port: source.ssh.port || 22,
+          username: source.ssh.username,
+        };
 
-        const sshArgs = [
-          '-i',
-          privateKeyPath,
-          '-p',
-          String(source.ssh.port || 22),
-          `${source.ssh.username}@${source.ssh.host}`,
-          remoteCommand,
-        ];
-
-        console.log(`Spawning SSH process: ssh ${sshArgs.slice(0, -1).join(' ')} "..."`);
-
-        const sshProcess = spawn('ssh', sshArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+        if (source.ssh.password) {
+          console.log(`[${source.name}] Using SSH password authentication.`);
+          sshConnectionOptions.password = source.ssh.password;
+        } else if (source.ssh.privateKey) {
+          console.log(`[${source.name}] Using SSH private key authentication.`);
+          const privateKeyPath = source.ssh.privateKey.startsWith('~')
+            ? path.join(os.homedir(), source.ssh.privateKey.substring(1))
+            : source.ssh.privateKey;
+          try {
+            sshConnectionOptions.privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
+            if (source.ssh.passphrase) {
+              sshConnectionOptions.passphrase = source.ssh.passphrase;
+            }
+          } catch (err: any) {
+            throw new Error(`Failed to read private key at ${privateKeyPath}: ${err.message}`);
+          }
+        } else {
+          throw new Error(`[${source.name}] SSH configuration must include either 'password' or 'privateKey'.`);
+        }
 
         const fileStream = fs.createWriteStream(filePath);
-        sshProcess.stdout.pipe(fileStream);
+        let fileStreamError: Error | null = null;
 
-        let errorOutput = '';
-        sshProcess.stderr.on('data', (data) => {
-          const errorChunk = data.toString();
-          console.warn(`SSH/mongodump: ${errorChunk.trim()}`);
-          errorOutput += errorChunk;
+        fileStream.on('error', (fsErr) => {
+          console.error(`Error writing backup file ${filePath}:`, fsErr);
+          fileStreamError = fsErr;
+          // Attempt to signal the SSH connection to stop, though it might be too late
+          if (ssh.isConnected()) {
+            // node-ssh doesn't have a direct way to cancel execCommand stream easily.
+            // Disposing might abort the process.
+            ssh.dispose();
+          }
         });
 
-        const exitCode = await new Promise<number>((resolve, reject) => {
-          sshProcess.on('close', resolve);
-          sshProcess.on('error', (err) => {
-            console.error(`Failed to start SSH process: ${err.message}`);
-            reject(new Error(`Failed to start SSH process: ${err.message}`));
-          });
-          fileStream.on('error', (err) => {
-            console.error(`Error writing backup file: ${err.message}`);
-            reject(new Error(`Error writing backup file: ${err.message}`));
-          });
-          fileStream.on('finish', () => {
-            console.log(`[${source.name}] Backup data stream finished writing to file.`);
-          });
-        });
+        try {
+          await ssh.connect(sshConnectionOptions);
+          console.log('SSH connection established.');
 
-        if (exitCode !== 0) {
-          throw new Error(`SSH mongodump execution finished with exit code ${exitCode}. Stderr: ${errorOutput}`);
+          console.log('Executing remote mongodump command via node-ssh (streaming with execCommand)...');
+
+          // Wrap execCommand in a Promise for proper async handling with streams
+          await new Promise<void>((resolve, reject) => {
+            let stderrOutput = '';
+            let commandExitCode: number | null = null;
+
+            ssh
+              .execCommand(remoteCommand, {
+                // cwd: '/tmp',
+                execOptions: { pty: false },
+                onStdout: (chunk: Buffer) => {
+                  if (!fileStream.write(chunk)) {
+                    console.log('[Debug] fileStream write returned false (backpressure)');
+                  }
+                },
+                onStderr: (chunk: Buffer) => {
+                  const errorChunk = chunk.toString('utf8');
+                  console.warn('SSH/mongodump stderr:', errorChunk.trim());
+                  stderrOutput += errorChunk;
+                },
+                // Attempt to capture the exit code if possible, though this isn't standard for execCommand
+                // Usually, execCommand resolves with the full result after completion.
+                // We might need a different approach if this doesn't work.
+              })
+              .then((result: { stdout: string; stderr: string; code: number | null }) => {
+                // This block is called AFTER the command finishes and all streams close.
+                // result.stdout/stderr contain the *full* buffered output here.
+                console.log('Remote command finished execution (execCommand).');
+                commandExitCode = result.code;
+                stderrOutput = result.stderr; // Update stderr with the final buffered value
+
+                // Ensure file stream finishes writing any final data (might be redundant if onStdout captured everything)
+                fileStream.end(() => {
+                  if (fileStreamError) {
+                    console.error('Error occurred during file writing, rejecting.');
+                    reject(fileStreamError);
+                    return;
+                  }
+
+                  // Check if code is not 0 (treat null as non-zero)
+                  if (commandExitCode !== 0) {
+                    const exitReason =
+                      commandExitCode === null ? 'terminated by signal' : `exited with code ${commandExitCode}`;
+                    const errorMsg = `Remote mongodump command failed (${exitReason}). Stderr: ${stderrOutput || 'N/A'}`;
+                    console.error(errorMsg);
+                    reject(new Error(errorMsg));
+                  } else {
+                    console.log('File stream finished writing successfully.');
+                    if (stderrOutput) {
+                      console.warn('[${source.name}] node-ssh execution completed with stderr output (see above).');
+                    } else {
+                      console.log('[${source.name}] node-ssh execution completed successfully.');
+                    }
+                    resolve(); // Resolve the promise on successful completion
+                  }
+                });
+              })
+              .catch((error) => {
+                // Catches errors from ssh.execCommand() itself
+                console.error('Error during ssh.execCommand execution:', error);
+                fileStream.end(); // Close file stream on error
+                reject(error);
+              });
+
+            // Handle errors on the file stream itself
+            fileStream.on('error', (fsErr) => {
+              if (!fileStreamError) {
+                // Avoid rejecting twice
+                console.error('File stream encountered error during operation:', fsErr);
+                fileStreamError = fsErr; // Set the flag
+                // We might want to reject the promise here directly, but the .then() block handles cleanup
+                // Consider if immediate rejection is needed or if letting .then() handle it is sufficient
+              }
+            });
+          }); // End of new Promise
+        } catch (error: any) {
+          // Catch connection errors or execCommand errors
+          console.error(`Error during node-ssh execution:`, error);
+          throw error; // Re-throw the error to be caught by the outer try-catch
+        } finally {
+          // Ensure resources are cleaned up
+          if (fileStream && !fileStream.closed) {
+            fileStream.end(); // Ensure file stream is closed
+          }
+          if (ssh.isConnected()) {
+            console.log('Disconnecting SSH...');
+            ssh.dispose();
+          }
         }
-        console.log(`[${source.name}] SSH mongodump process completed successfully.`);
+
+        // --- End SSH Execution with NodeSSH ---
       } else {
         // --- Local Execution ---
         const directArgs = [...baseArgs];
@@ -313,7 +421,11 @@ export class BackupService {
       return filePath;
     } catch (error: any) {
       console.error(`\n✖ Error creating backup: ${error.message}`);
-      console.error(`Failed command (approximate): ${commandStringForLog}`);
+      // commandStringForLog might not be defined if error happened before it was set
+      if (commandStringForLog) {
+        console.error(`Failed command (approximate): ${commandStringForLog}`);
+      }
+      // Ensure cleanup happens even if error occurs during node-ssh block or local execution
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
@@ -322,7 +434,7 @@ export class BackupService {
           console.error(`Failed to cleanup incomplete backup file ${filePath}: ${cleanupError.message}`);
         }
       }
-      throw error;
+      throw error; // Re-throw the original error
     }
   }
 

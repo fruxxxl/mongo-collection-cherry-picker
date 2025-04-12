@@ -6,6 +6,7 @@ export const SSHConfigSchema = z.object({
   username: z.string(),
   privateKey: z.string(),
   passphrase: z.string().optional(),
+  password: z.string().optional(),
 });
 
 export const ConnectionConfigSchema = z.object({
@@ -27,6 +28,7 @@ export const BackupPresetSchema = z.object({
   selectionMode: z.enum(['all', 'include', 'exclude']),
   collections: z.array(z.string()).optional(),
   createdAt: z.string(),
+  queryStartTime: z.string().optional(),
 });
 
 export const AppConfigSchema = z.object({

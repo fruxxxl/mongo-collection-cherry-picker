@@ -4,6 +4,7 @@ export interface SSHConfig {
   username: string;
   privateKey: string;
   passphrase?: string;
+  password?: string;
 }
 
 export interface ConnectionConfig {

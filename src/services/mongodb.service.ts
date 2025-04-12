@@ -266,16 +266,33 @@ export class MongoDBService {
     console.log(`[${config.name}] Setting up SSH tunnel...`);
 
     const sshConf: SSHConfig = config.ssh!;
+    const sshAuthOptions: { privateKey?: string; password?: string; passphrase?: string } = {};
 
-    const privateKeyPath = sshConf.privateKey.startsWith('~')
-      ? path.join(os.homedir(), sshConf.privateKey.substring(1))
-      : sshConf.privateKey;
+    if (sshConf.password) {
+      // Use password authentication
+      sshAuthOptions.password = sshConf.password;
+      console.log(`[${config.name}] Using SSH password authentication for user ${sshConf.username}.`);
+    } else if (sshConf.privateKey) {
+      // Use private key authentication
+      console.log(`[${config.name}] Using SSH private key authentication for user ${sshConf.username}.`);
+      const privateKeyPath = sshConf.privateKey.startsWith('~')
+        ? path.join(os.homedir(), sshConf.privateKey.substring(1))
+        : sshConf.privateKey;
 
-    let privateKeyContent: string;
-    try {
-      privateKeyContent = fs.readFileSync(privateKeyPath, 'utf-8');
-    } catch (err: any) {
-      throw new Error(`[${config.name}] Failed to read private key at ${privateKeyPath}: ${err.message}`);
+      try {
+        const privateKeyContent = fs.readFileSync(privateKeyPath, 'utf-8');
+        sshAuthOptions.privateKey = privateKeyContent;
+        if (sshConf.passphrase) {
+          sshAuthOptions.passphrase = sshConf.passphrase;
+        }
+      } catch (err: any) {
+        throw new Error(`[${config.name}] Failed to read private key at ${privateKeyPath}: ${err.message}`);
+      }
+    } else {
+      // No valid authentication method found
+      throw new Error(
+        `[${config.name}] SSH configuration must include either 'password' or 'privateKey' for user ${sshConf.username}.`,
+      );
     }
 
     let targetHost: string;
@@ -333,11 +350,10 @@ export class MongoDBService {
       host: sshConf.host,
       port: sshConf.port || 22,
       username: sshConf.username,
-      privateKey: privateKeyContent,
-      passphrase: sshConf.passphrase,
+      ...sshAuthOptions, // Use determined auth options
     };
 
-    const serverPort = 0;
+    const serverPort = 0; // Request an OS-assigned ephemeral port
 
     const forwardOptions = {
       srcAddr: '127.0.0.1',

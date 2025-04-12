@@ -125,7 +125,7 @@ export class BackupManager {
       }
       // --- End Parameter Determination ---
 
-      spinner.text = `Running backup process for ${source.name}...`;
+      spinner.stop();
       const backupFilename = await this.backupService.createBackup(
         source,
         actualSelected, // Use calculated selected (only for single collection + time)
@@ -134,7 +134,7 @@ export class BackupManager {
         startTime, // Pass startTime
       );
 
-      spinner.text = `Saving metadata for ${backupFilename}...`;
+      spinner.start(`Saving metadata for ${backupFilename}...`);
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
@@ -210,6 +210,8 @@ export class BackupManager {
       const collections = preset.collections || [];
 
       // --- Determine mode, collections, and startTime ---
+      console.log('==check==', preset.queryStartTime, preset.selectionMode, collections.length);
+
       if (preset.queryStartTime && preset.selectionMode === 'include' && collections.length === 1) {
         // --- Time Filter Case ---
         startTime = parseISO(preset.queryStartTime);
@@ -269,7 +271,11 @@ export class BackupManager {
       }
       // --- End Determination ---
 
-      spinner.start(`Running backup process for preset "${preset.name}"...`);
+      spinner.stop();
+      console.log('Creating backup with preset');
+      console.log('========================================\n');
+      console.log(preset);
+      console.log('========================================\n');
       const backupFilename = await this.backupService.createBackup(
         source,
         actualSelected,
@@ -278,7 +284,7 @@ export class BackupManager {
         startTime,
       );
 
-      spinner.text = `Saving metadata for preset backup ${backupFilename}...`;
+      spinner.start(`Saving metadata for preset backup ${backupFilename}...`);
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
