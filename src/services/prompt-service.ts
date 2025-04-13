@@ -1,27 +1,52 @@
 import inquirer from 'inquirer';
 import type { AppConfig, ConnectionConfig, BackupMetadata, BackupPreset } from '../types';
-import { BackupService } from '../services/backup.service';
-import { MongoDBService } from '../services/mongodb.service';
+import { BackupService } from './backup.service';
+import { MongoDBService } from './mongodb.service';
 import { savePresets } from '../utils';
 import ora from 'ora';
 import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, formatISO, format } from 'date-fns';
+import { Logger } from '../utils/logger';
 
 /**
  * Provides services for interacting with the user via command-line prompts (inquirer).
  */
 export class PromptService {
-  private config: AppConfig;
-  private backupService: BackupService;
-  private mongoService: MongoDBService;
+  constructor(
+    private readonly config: AppConfig,
+    private readonly backupService: BackupService,
+    private readonly mongoService: MongoDBService,
+    private readonly logger: Logger,
+  ) {}
 
-  /**
-   * Creates an instance of PromptService.
-   * @param config - The application configuration.
-   */
-  constructor(config: AppConfig) {
-    this.config = config;
-    this.mongoService = new MongoDBService(config);
-    this.backupService = new BackupService(config);
+  async askForStartAction(): Promise<'backup' | 'restore' | 'preset_create' | 'preset_manage' | 'exit'> {
+    const { action } = await inquirer.prompt<{
+      action: 'backup' | 'restore' | 'preset_create' | 'preset_manage' | 'exit';
+    }>({
+      type: 'list',
+      name: 'action',
+      message: 'Select action:',
+      choices: [
+        { name: 'Create Backup', value: 'backup' },
+        { name: 'Restore from Backup', value: 'restore' },
+        { name: 'Create Backup Preset', value: 'preset_create' },
+        { name: 'Manage Presets (Use/View/Delete)', value: 'preset_manage' },
+        new inquirer.Separator(),
+        { name: 'Exit', value: 'exit' },
+      ],
+      loop: false,
+    });
+
+    return action;
+  }
+
+  async askForContinueAction(): Promise<boolean> {
+    const { continueAction } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'continueAction',
+      message: 'Do you want to perform another action?',
+      default: true,
+    });
+    return continueAction;
   }
 
   /**

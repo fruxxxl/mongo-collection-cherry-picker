@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { AppConfig, CommandLineArgs } from '../types';
-import { AppConfigSchema } from '../config/config.schema';
+import { AppConfigSchema } from '../zod-schemas/config.schema';
 
 /**
  * Parses command line arguments passed to the application.
@@ -12,7 +12,7 @@ import { AppConfigSchema } from '../config/config.schema';
  */
 export function parseCommandLineArgs(): CommandLineArgs {
   const args = process.argv.slice(2);
-  let configPath = './config.json';
+
   let mode: 'backup' | 'restore' | undefined;
   let source: string | undefined;
   let backupMode: 'all' | 'include' | 'exclude' | undefined;
@@ -26,16 +26,6 @@ export function parseCommandLineArgs(): CommandLineArgs {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-
-    if (arg === '--config' && i + 1 < args.length) {
-      configPath = args[i + 1];
-      i++;
-      continue;
-    }
-    if (arg.startsWith('--config=')) {
-      configPath = arg.split('=')[1];
-      continue;
-    }
 
     if (arg === '--backup' || arg === '--mode=backup') {
       mode = 'backup';
@@ -135,7 +125,6 @@ export function parseCommandLineArgs(): CommandLineArgs {
   }
 
   return {
-    configPath,
     mode: finalInteractive ? undefined : mode,
     interactive: finalInteractive,
     source,

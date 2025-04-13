@@ -84,8 +84,6 @@ export interface BackupMetadata {
 }
 
 export interface CommandLineArgs {
-  /** Path to the configuration file. */
-  configPath: string;
   /** Flag indicating if the application should run in interactive mode. */
   interactive?: boolean;
   /** The primary operation mode ('backup' or 'restore'), usually undefined in interactive mode. */

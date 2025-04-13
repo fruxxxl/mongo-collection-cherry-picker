@@ -6,29 +6,21 @@ import { parseISO, isValid } from 'date-fns'; // Import parseISO and isValid
 import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
 
-import { PromptService } from './prompt-service';
+import { PromptService } from '../services/prompt-service';
 import { AppConfig, BackupPreset, BackupMetadata, ConnectionConfig } from '../types/index';
+import { Logger } from '../utils/logger';
 
 /**
  * Manages the backup process, coordinating user prompts, backup service, and metadata generation.
  */
 export class BackupManager {
-  private config: AppConfig;
-  private mongoService: MongoDBService;
-  private backupService: BackupService;
-  private promptService: PromptService;
-
-  /**
-   * Creates an instance of BackupManager.
-   * @param config - The application configuration.
-   * @param promptService - Service for handling user interactions.
-   */
-  constructor(config: AppConfig, promptService: PromptService) {
-    this.config = config;
-    this.mongoService = new MongoDBService(config);
-    this.promptService = promptService;
-    this.backupService = new BackupService(config);
-  }
+  constructor(
+    private readonly config: AppConfig,
+    private readonly promptService: PromptService,
+    private readonly mongoService: MongoDBService,
+    private readonly backupService: BackupService,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Initiates the interactive backup process.

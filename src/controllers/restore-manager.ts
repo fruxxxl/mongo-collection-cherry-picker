@@ -4,30 +4,21 @@ import inquirer from 'inquirer';
 import fs from 'fs';
 import { BackupService } from '../services/backup.service';
 import { RestoreService } from '../services/restore.service';
-import type { PromptService } from './prompt-service';
+import type { PromptService } from '../services/prompt-service';
 import type { AppConfig, RestorePreset, ConnectionConfig, BackupMetadata } from '../types/index';
+import { Logger } from '../utils/logger';
 
 /**
  * Manages the restore process, coordinating user prompts (if needed) and the RestoreService.
  */
 export class RestoreManager {
-  private config: AppConfig;
-  private backupService: BackupService;
-  private restoreService: RestoreService;
-  private promptService: PromptService;
-
-  /**
-   * Creates an instance of RestoreManager.
-   * @param config - The application configuration.
-   * @param backupService - Service for accessing backup files and metadata.
-   * @param promptService - Service for handling user interactions.
-   */
-  constructor(config: AppConfig, backupService: BackupService, promptService: PromptService) {
-    this.config = config;
-    this.backupService = backupService;
-    this.promptService = promptService;
-    this.restoreService = new RestoreService(config);
-  }
+  constructor(
+    private readonly config: AppConfig,
+    private readonly backupService: BackupService,
+    private readonly promptService: PromptService,
+    private readonly restoreService: RestoreService,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Runs the restore operation for a given backup file to a specified target connection.

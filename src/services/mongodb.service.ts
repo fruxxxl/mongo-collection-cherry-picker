@@ -1,12 +1,12 @@
 import { MongoClient, Db, ListCollectionsCursor } from 'mongodb';
-
 import { AppConfig, ConnectionConfig, SSHConfig } from '../types/index';
-import { createTunnel } from 'tunnel-ssh';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { URLSearchParams } from 'url';
-import type { Server } from 'net';
+import { Logger } from '../utils/logger'; // Keep Logger import
+import { createTunnel } from 'tunnel-ssh'; // Ensure createTunnel is imported
+import type { Server } from 'net'; // Keep Server type from net for the tunnel instance
 
 function parseMongoUri(uri: string): {
   user?: string;
@@ -22,9 +22,11 @@ function parseMongoUri(uri: string): {
     const uriWithSlash = uri.includes('?') && !uri.includes('/?') ? uri.replace('?', '/?') : uri;
     const fallbackMatch = uriWithSlash.match(mongoUriRegex);
     if (!fallbackMatch) {
+      // Consider using logger here if available globally or passed
       console.error('Failed to parse URI with regex:', uri);
       throw new Error('Invalid MongoDB URI format');
     }
+    // Consider using logger here
     console.warn('Parsed URI using fallback with added slash.');
     match = fallbackMatch;
   }
@@ -63,17 +65,18 @@ function parseMongoUri(uri: string): {
  * including handling connections via SSH tunnels.
  */
 export class MongoDBService {
-  private config: AppConfig;
   private client: MongoClient | null = null;
   private sshTunnelServer: Server | null = null;
 
   /**
    * Creates an instance of MongoDBService.
    * @param config - The application configuration.
+   * @param logger - The logger service instance.
    */
-  constructor(config: AppConfig) {
-    this.config = config;
-  }
+  constructor(
+    private readonly config: AppConfig,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Establishes a connection to a MongoDB instance based on the provided configuration.
@@ -86,31 +89,34 @@ export class MongoDBService {
    */
   async connect(connectionConfig: ConnectionConfig): Promise<void> {
     if (this.client) {
-      console.warn(`[${connectionConfig.name}] Already connected. Closing existing connection before reconnecting.`);
+      this.logger.warn(
+        `[${connectionConfig.name}] Already connected. Closing existing connection before reconnecting.`,
+      );
       await this.close();
     }
 
     try {
       if (connectionConfig.ssh) {
         this.client = await this.connectWithTunnel(connectionConfig);
-        console.log(`[${connectionConfig.name}] Connection successfully established via SSH tunnel.`);
+        this.logger.info(`[${connectionConfig.name}] Connection successfully established via SSH tunnel.`);
       } else {
         const uri = this.buildMongoUri(connectionConfig);
-        console.log(
+        this.logger.info(
           `[${connectionConfig.name}] Connecting directly to MongoDB with URI: ${uri.replace(/:([^:@\/]+)@/, ':<password>@')}`,
         );
         this.client = await MongoClient.connect(uri);
-        console.log(`[${connectionConfig.name}] Direct connection successfully established.`);
+        this.logger.info(`[${connectionConfig.name}] Direct connection successfully established.`);
       }
     } catch (error: any) {
-      console.error(`[${connectionConfig.name}] Connection failed in connect method:`, error);
+      this.logger.error(`[${connectionConfig.name}] Connection failed in connect method: ${error}`);
       if (this.sshTunnelServer) {
-        console.error(`[${connectionConfig.name}] Closing SSH tunnel due to connection error.`);
+        this.logger.warn(`[${connectionConfig.name}] Closing SSH tunnel due to connection error.`);
         this.sshTunnelServer.close();
         this.sshTunnelServer = null;
       }
       this.client = null;
-      throw new Error(`[${connectionConfig.name}] Error connecting: ${error.message || error}`);
+      // Re-throw the original error or a new error with context
+      throw new Error(`[${connectionConfig.name}] Connection failed.`);
     }
   }
 
@@ -122,25 +128,30 @@ export class MongoDBService {
     if (this.client) {
       try {
         await this.client.close();
-        console.log('MongoDB connection closed.');
+        this.logger.info('MongoDB connection closed.');
       } catch (error: any) {
-        console.error(`Error closing MongoDB connection: ${error.message}`);
+        this.logger.error(`Error closing MongoDB connection: ${error}`);
       } finally {
         this.client = null;
       }
     }
 
     if (this.sshTunnelServer) {
-      console.log('Closing SSH tunnel...');
+      this.logger.info('Closing SSH tunnel server (tunnel-ssh)...');
       try {
-        if (typeof this.sshTunnelServer.close === 'function') {
-          this.sshTunnelServer.close();
-          console.log('SSH tunnel closed.');
-        } else {
-          console.warn('SSH tunnel server does not have a close method.');
-        }
+        await new Promise<void>((resolve, reject) => {
+          this.sshTunnelServer!.close((err?: Error) => {
+            if (err) {
+              this.logger.error(`Error closing SSH tunnel server: ${err.message}`);
+              reject(err);
+            } else {
+              this.logger.info('SSH tunnel server closed successfully.');
+              resolve();
+            }
+          });
+        });
       } catch (error: any) {
-        console.error(`Error closing SSH tunnel: ${error.message}`);
+        this.logger.error(`Caught error during SSH tunnel server close: ${error}`);
       } finally {
         this.sshTunnelServer = null;
       }
@@ -157,6 +168,8 @@ export class MongoDBService {
    */
   async getCollections(dbName: string): Promise<string[]> {
     if (!this.client) {
+      // Use logger for error context
+      this.logger.error('getCollections called while not connected to MongoDB.');
       throw new Error('Not connected to MongoDB. Call connect() first.');
     }
 
@@ -166,8 +179,8 @@ export class MongoDBService {
       const collections = await collectionsCursor.toArray();
       return collections.map((col) => col.name);
     } catch (error: any) {
-      console.error(`Error getting collection list for database "${dbName}":`, error);
-      throw new Error(`Error getting collection list for database "${dbName}": ${error.message || error}`);
+      this.logger.error(`Error getting collection list for database "${dbName}": ${error}`);
+      throw new Error(`Error getting collection list for database "${dbName}".`);
     }
   }
 
@@ -177,6 +190,7 @@ export class MongoDBService {
 
   getDb(databaseName: string): Db {
     if (!this.client) {
+      this.logger.error('getDb called while not connected to MongoDB.');
       throw new Error('Not connected to MongoDB. Call connect() first.');
     }
     return this.client.db(databaseName);
@@ -210,10 +224,13 @@ export class MongoDBService {
         })
         .join(',');
     } else {
+      // Log error before throwing
+      this.logger.error(`[${config.name}] Connection must have either 'uri', 'hosts', or 'host' defined.`);
       throw new Error(`[${config.name}] Connection must have either 'uri', 'hosts', or 'host' defined.`);
     }
 
     if (!config.database) {
+      this.logger.error(`[${config.name}] Connection must have 'database' defined.`);
       throw new Error(`[${config.name}] Connection must have 'database' defined.`);
     }
 
@@ -252,7 +269,7 @@ export class MongoDBService {
   }
 
   /**
-   * Establishes a MongoDB connection through an SSH tunnel.
+   * Establishes a MongoDB connection through an SSH tunnel using tunnel-ssh.
    * Creates an SSH tunnel and connects MongoClient to the local tunnel endpoint.
    *
    * @param config - The connection configuration including SSH details.
@@ -261,44 +278,48 @@ export class MongoDBService {
    */
   private async connectWithTunnel(config: ConnectionConfig): Promise<MongoClient> {
     if (!config.ssh) {
+      this.logger.error(`[${config.name}] SSH configuration is missing for tunnel connection.`);
       throw new Error(`[${config.name}] SSH configuration is missing for tunnel connection.`);
     }
-    console.log(`[${config.name}] Setting up SSH tunnel...`);
+    this.logger.info(`[${config.name}] Setting up SSH tunnel using tunnel-ssh...`);
 
     const sshConf: SSHConfig = config.ssh!;
-    const sshAuthOptions: { privateKey?: string; password?: string; passphrase?: string } = {};
+    const sshAuthOptions: { privateKey?: string | Buffer; password?: string; passphrase?: string } = {}; // Type from tunnel-ssh
 
     if (sshConf.password) {
-      // Use password authentication
+      this.logger.info(`[${config.name}] Using SSH password authentication for user ${sshConf.username}.`);
       sshAuthOptions.password = sshConf.password;
-      console.log(`[${config.name}] Using SSH password authentication for user ${sshConf.username}.`);
     } else if (sshConf.privateKey) {
-      // Use private key authentication
-      console.log(`[${config.name}] Using SSH private key authentication for user ${sshConf.username}.`);
+      this.logger.info(`[${config.name}] Using SSH private key authentication for user ${sshConf.username}.`);
       const privateKeyPath = sshConf.privateKey.startsWith('~')
         ? path.join(os.homedir(), sshConf.privateKey.substring(1))
         : sshConf.privateKey;
-
       try {
-        const privateKeyContent = fs.readFileSync(privateKeyPath, 'utf-8');
-        sshAuthOptions.privateKey = privateKeyContent;
+        // tunnel-ssh might prefer Buffer or string
+        sshAuthOptions.privateKey = fs.readFileSync(privateKeyPath);
         if (sshConf.passphrase) {
           sshAuthOptions.passphrase = sshConf.passphrase;
         }
       } catch (err: any) {
-        throw new Error(`[${config.name}] Failed to read private key at ${privateKeyPath}: ${err.message}`);
+        this.logger.error(`[${config.name}] Failed to read private key at ${privateKeyPath}: ${err}`);
+        throw new Error(`[${config.name}] Failed to read private key at ${privateKeyPath}.`);
       }
     } else {
-      // No valid authentication method found
+      this.logger.error(
+        `[${config.name}] SSH configuration must include either 'password' or 'privateKey' for user ${sshConf.username}.`,
+      );
       throw new Error(
         `[${config.name}] SSH configuration must include either 'password' or 'privateKey' for user ${sshConf.username}.`,
       );
     }
 
+    // Determine target MongoDB host/port
     let targetHost: string;
     let targetPort: number;
     let parsedUriAuth: { user?: string; password?: string; authSource?: string } = {};
 
+    // Logic to determine targetHost, targetPort, parsedUriAuth from config.uri or config.host/port/etc.
+    // (Assuming this logic is correct and remains the same)
     if (config.uri) {
       try {
         const parsedUri = parseMongoUri(config.uri);
@@ -313,9 +334,10 @@ export class MongoDBService {
           authSource: parsedUri.options.authSource,
         };
       } catch (e: any) {
-        throw new Error(
+        this.logger.error(
           `[${config.name}] Failed to parse target host/port from provided URI (${config.uri}): ${e.message}`,
         );
+        throw new Error(`[${config.name}] Failed to parse target host/port from provided URI (${config.uri}).`);
       }
     } else if (config.hosts && config.hosts.length > 0) {
       targetHost = config.hosts[0].host;
@@ -336,6 +358,9 @@ export class MongoDBService {
         authSource: config.authSource || config.authenticationDatabase || config.authDatabase,
       };
     } else {
+      this.logger.error(
+        `[${config.name}] Cannot determine target MongoDB host/port for SSH tunnel. Provide 'uri', 'hosts', or 'host' in the connection config.`,
+      );
       throw new Error(
         `[${config.name}] Cannot determine target MongoDB host/port for SSH tunnel. Provide 'uri', 'hosts', or 'host' in the connection config.`,
       );
@@ -346,44 +371,49 @@ export class MongoDBService {
       reconnectOnError: false,
     };
 
+    // Config for the SSH connection itself
     const sshConnectionConfig = {
       host: sshConf.host,
       port: sshConf.port || 22,
       username: sshConf.username,
-      ...sshAuthOptions, // Use determined auth options
+      ...sshAuthOptions,
     };
 
-    const serverPort = 0; // Request an OS-assigned ephemeral port
-
+    // Config for the destination of the tunnel
     const forwardOptions = {
-      srcAddr: '127.0.0.1',
-      srcPort: serverPort,
+      srcAddr: '127.0.0.1', // Bind locally
+      srcPort: 0, // Request OS-assigned ephemeral port
       dstAddr: targetHost,
       dstPort: targetPort,
     };
 
     try {
-      console.log(
+      this.logger.info(
         `[${config.name}] Creating tunnel: localhost:<auto> -> ${sshConf.host}:${sshConf.port || 22} -> ${targetHost}:${targetPort}`,
       );
+
       const [serverInstance] = await createTunnel(tunnelOptions, {}, sshConnectionConfig, forwardOptions);
-      this.sshTunnelServer = serverInstance;
+      this.sshTunnelServer = serverInstance; // Store the net.Server instance
 
       const address = this.sshTunnelServer.address();
       if (!address || typeof address === 'string' || !address.port) {
+        // Close the server if we can't get the port
+        serverInstance.close();
+        this.sshTunnelServer = null;
         throw new Error('Could not determine local port for tunnel');
       }
       const localPort = address.port;
-      console.log(
+      this.logger.info(
         `[${config.name}] SSH tunnel established! Forwarding localhost:${localPort} -> ${targetHost}:${targetPort}`,
       );
 
+      // Build local URI using determined port
       const originalOptionsFiltered = Object.fromEntries(
         Object.entries(config.options || {}).filter(([key]) => key !== 'replicaSet'),
       );
 
       const localUriConfig: ConnectionConfig = {
-        name: config.name,
+        name: `${config.name}-tunnel`, // Differentiate name
         database: config.database,
         username: parsedUriAuth.user ?? config.username,
         password: parsedUriAuth.password ?? config.password,
@@ -397,25 +427,39 @@ export class MongoDBService {
         ssh: undefined,
         options: {
           ...originalOptionsFiltered,
-          directConnection: 'true',
+          directConnection: 'true', // Important for connecting to a specific tunneled node
         },
       };
 
       const localUri = this.buildMongoUri(localUriConfig);
 
-      console.log(
+      this.logger.info(
         `[${config.name}] Connecting to MongoDB via tunnel: ${localUri.replace(/:([^:@\/]+)@/, ':<password>@')}`,
       );
 
+      // Connect MongoClient to the local tunnel endpoint
       const client = await MongoClient.connect(localUri);
+      this.logger.info(`[${config.name}] MongoClient connected successfully via tunnel.`);
       return client;
     } catch (error: any) {
-      console.error(`[${config.name}] SSH tunnel or MongoDB connection failed:`, error);
+      this.logger.error(`[${config.name}] SSH tunnel setup or MongoDB connection failed: ${error}`);
+      // Ensure tunnel server is closed on error
       if (this.sshTunnelServer) {
-        this.sshTunnelServer.close();
-        this.sshTunnelServer = null;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            this.sshTunnelServer!.close((err?: Error) => {
+              err ? reject(err) : resolve();
+            });
+          });
+        } catch (closeErr: any) {
+          this.logger.error(
+            `[${config.name}] Error closing tunnel server after connection failure: ${closeErr.message}`,
+          );
+        } finally {
+          this.sshTunnelServer = null;
+        }
       }
-      throw new Error(`[${config.name}] SSH tunnel or MongoDB connection failed: ${error.message || error}`);
+      throw new Error(`[${config.name}] SSH tunnel or MongoDB connection failed.`);
     }
   }
 }

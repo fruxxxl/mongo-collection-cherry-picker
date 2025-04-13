@@ -1,26 +1,21 @@
 import inquirer from 'inquirer';
 import { savePresets } from '../utils';
-import { PromptService } from './prompt-service';
+import { PromptService } from '../services/prompt-service';
 import { BackupManager } from './backup-manager';
 import { AppConfig, BackupPreset } from '../types/index';
+import { Logger } from '../utils/logger';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
  */
 export class PresetManager {
-  private config: AppConfig;
-  private promptService: PromptService;
-  private backupManager: BackupManager;
-
-  /**
-   * Creates an instance of PresetManager.
-   * @param config - The application configuration.
-   * @param backupManager - Manager to execute backups (used for 'Use Preset Now').
-   */
-  constructor(config: AppConfig, backupManager: BackupManager) {
-    this.config = config;
-    this.promptService = new PromptService(config);
-    this.backupManager = backupManager;
+  constructor(
+    private readonly config: AppConfig,
+    private readonly backupManager: BackupManager,
+    private readonly promptService: PromptService,
+    private readonly logger: Logger,
+  ) {
+    // Initialize backup presets if they don't exist
     this.config.backupPresets = this.config.backupPresets || [];
   }
 

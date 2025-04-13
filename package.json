@@ -6,9 +6,9 @@
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "build": "tsc",
-        "interactive": "tsc && node ./dist/index.js",
-        "backup": "tsc && node ./dist/index.js --backup --no-interactive",
-        "restore": "tsc && node ./dist/index.js --restore --no-interactive"
+        "interactive": "tsc && node ./dist/apps/interactive.js",
+        "backup": "tsc && node ./dist/apps/cli.js --backup",
+        "restore": "tsc && node ./dist/apps/cli.js --restore"
     },
     "author": "",
     "license": "ISC",
@@ -31,7 +31,7 @@
         "typescript": "^5.4.3"
     },
     "dependencies": {
-        "chalk": "^4.1.0",
+        "chalk": "^4.1.2",
         "date-fns": "^4.1.0",
         "dotenv": "^16.4.5",
         "inquirer": "^8.2.6",

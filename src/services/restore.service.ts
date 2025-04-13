@@ -5,21 +5,17 @@ import * as path from 'path';
 
 import { spawn } from 'child_process';
 import os from 'os';
+import { Logger } from '../utils/logger';
 
 /**
  * Handles the restoration of MongoDB backups using mongorestore.
  * Supports restoring from archives (.gz) via direct connection or SSH tunnel.
  */
 export class RestoreService {
-  private config: AppConfig;
-
-  /**
-   * Creates an instance of RestoreService.
-   * @param config - The application configuration.
-   */
-  constructor(config: AppConfig) {
-    this.config = config;
-  }
+  constructor(
+    private readonly config: AppConfig,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Restores a MongoDB database from a backup archive, using metadata for filtering.
