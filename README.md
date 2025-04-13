@@ -90,6 +90,7 @@ Create or modify the `config.json` file in your project root:
         "products",
         "orders"
       ],
+      "queryStartTime": "2023-10-27T00:00:00Z", // Optional: Example start time
       "createdAt": "2023-10-27T10:30:00Z" // Managed by the tool
     },
     {
@@ -121,7 +122,8 @@ Create or modify the `config.json` file in your project root:
     *   `name`: Unique identifier.
     *   `sourceName`: The `name` of the connection to use.
     *   `selectionMode`: `'include'`, `'exclude'`, or `'all'`.
-    *   `collections`: Array of collection names (used for `include`/`exclude`).
+    *   `collections`: Array of collection names (required if `selectionMode` is `'include'` or `'exclude'`).
+    *   `queryStartTime`: Optional string. Can be used to specify a start time for the backup query (e.g., for point-in-time recovery scenarios or data filtering based on time). Format should be suitable for MongoDB's `--query` option if used.
     *   `createdAt`: Timestamp (managed by the tool).
 
 ## 🖥️ Usage
@@ -129,21 +131,29 @@ Create or modify the `config.json` file in your project root:
 Run the tool using `ts-node` (for development) or `node` (after building).
 
 ```bash
-# Using ts-node
-npx ts-node src/main.ts [arguments]
+# Using ts-node for interactive mode
+npx ts-node src/apps/interactive.ts
 
-# Using compiled code
-node dist/main.js [arguments]
+# Using ts-node for CLI mode
+npx ts-node src/apps/cli.ts [arguments]
+
+# Using compiled code for interactive mode
+node dist/apps/interactive.js
+
+# Using compiled code for CLI mode
+node dist/apps/cli.js [arguments]
 ```
 
 ### Interactive Mode
 
-Start the tool without arguments for a guided experience:
+Start the tool in interactive mode for a guided experience:
 
 ```bash
-npx ts-node src/main.ts
+# Using ts-node
+npx ts-node src/apps/interactive.ts
 # or
-node dist/main.js
+# Using compiled code
+node dist/apps/interactive.js
 ```
 
 The menu allows you to:
@@ -154,23 +164,13 @@ The menu allows you to:
 
 ### Non-Interactive Mode
 
-Use command-line arguments for automation:
+Use command-line arguments with the CLI entry point for automation. *(Note: CLI functionality is currently under development. Detailed argument documentation will be added once finalized.)*
 
 ```bash
-# Backup all collections from 'localDev'
-node dist/main.js --mode backup --source localDev --backupMode all
-
-# Backup specific collections ('users', 'orders') from 'stagingServer' (via SSH)
-node dist/main.js --mode backup --source stagingServer --backupMode include --collections users,orders
-
-# Backup all collections EXCEPT 'logs' from 'stagingServer'
-node dist/main.js --mode backup --source stagingServer --backupMode exclude --collections logs
-
-# Run a predefined backup preset
-node dist/main.js --mode backup --preset "Core Staging Data"
-
-# Restore a backup file to 'localDev', dropping target collections first
-node dist/main.js --mode restore --backupFile ./backups/backup_YYYY-MM-DD_stagingServer.gz --target localDev --drop
+# Example of running the CLI entry point:
+node dist/apps/cli.js [arguments]
+# or using ts-node:
+# npx ts-node src/apps/cli.ts [arguments]
 ```
 
 ## 💾 Backup Metadata (`<backup_file_name>.gz.json`)
@@ -179,35 +179,22 @@ Each backup archive (e.g., `backup_2023-10-28_stagingServer.gz`) has a correspon
 
 ```json
 {
-  "source": "stagingServer",       // Name of the source connection
-  "database": "stagingdb",         // Name of the database backed up
-  "includedCollections": [         // Populated if selectionMode='include'
+  "source": "stagingServer",               // Name of the source connection
+  "database": "stagingdb",                 // Name of the database backed up
+  "selectionMode": "include",              // Mode used ('all', 'include', 'exclude')
+  "includedCollections": [                 // Populated if selectionMode='include'
     "users",
     "products"
   ],
-  "selectionMode": "include",      // Mode used ('all', 'include', 'exclude')
-  "excludedCollections": [],       // Populated if selectionMode='exclude'
-  "timestamp": 1698480000000,      // Unix timestamp (ms) of backup creation
-  "date": "2023-10-28T08:00:00.000Z", // ISO 8601 timestamp
-  "archivePath": "backup_2023-10-28_stagingServer.gz" // Relative path of the archive
+  // "excludedCollections": [],             // Populated if selectionMode='exclude' (absent otherwise)
+  "timestamp": 1698480000000,              // Unix timestamp (ms) of backup creation
+  "date": "2023-10-28T08:00:00.000Z",     // ISO 8601 timestamp
+  "archivePath": "backup_2023-10-28_stagingServer.gz", // Relative path of the archive
+  "presetName": "Core Staging Data",       // Optional: Name of the preset used
+  "queryStartTime": "2023-10-27T00:00:00Z"  // Optional: Start time used for query
 }
 ```
 This metadata aids the restore process (especially for database name mapping) and documents the backup contents.
-
-## 🛠️ Command Line Arguments
-
-| Argument        | Description                                                    | Example                              |
-| --------------- | -------------------------------------------------------------- | ------------------------------------ |
-| `--mode`        | Operation mode: `backup` or `restore`                          | `--mode backup`                      |
-| `--interactive` | Force interactive mode                                         | `--interactive`                      |
-| `--source`      | **Backup:** Source connection name (required if no preset)     | `--source stagingServer`             |
-| `--backupMode`  | **Backup:** Collection mode: `all`, `include`, `exclude`       | `--backupMode include`               |
-| `--collections` | **Backup:** Comma-separated collections (for include/exclude)  | `--collections users,products`       |
-| `--preset`      | **Backup:** Name of backup preset to use                       | `--preset "Core Staging Data"`       |
-| `--backupFile`  | **Restore:** Path to backup file (`.gz`)                       | `--backupFile ./backups/mybackup.gz` |
-| `--target`      | **Restore:** Target connection name                            | `--target localDev`                  |
-| `--drop`        | **Restore:** Drop target collections before restore (optional) | `--drop`                             |
-| `--configPath`  | Custom path to `config.json` file (optional)                   | `--configPath ./custom-config.json`  |
 
 ## 🏗️ Project Structure
 
@@ -215,23 +202,35 @@ This metadata aids the restore process (especially for database name mapping) an
 mongo-collection-cherry-picker/
 ├── backups/                  # Default backup storage directory
 ├── src/
-│   ├── core/
-│   │   ├── backup-manager.ts   # Backup workflow logic
-│   │   ├── restore-manager.ts  # Restore workflow logic
-│   │   └── preset-manager.ts   # Preset management logic
-│   ├── services/
-│   │   ├── mongodb.service.ts  # MongoDB connection/query handling
-│   │   ├── backup.service.ts   # mongodump execution logic
-│   │   └── restore.service.ts  # mongorestore execution logic
-│   ├── utils/
-│   │   ├── formatter.ts        # Filename formatting
-│   │   └── prompts.ts          # Interactive prompts logic
-│   ├── types/
-│   │   └── index.ts            # TypeScript type definitions
-│   └── main.ts                 # Application entry point (CLI parsing)
+│   ├── apps/                 # Entry points for different application modes (CLI, Interactive)
+│   │   ├── cli.ts            # Entry point for CLI mode
+│   │   └── interactive.ts    # Entry point for interactive mode
+│   ├── controllers/          # Handles user input and orchestrates actions for different modes
+│   │   ├── backup-controller.ts # Logic for backup operations
+│   │   ├── preset-controller.ts # Logic for managing presets
+│   │   └── restore-controller.ts# Logic for restore operations
+│   ├── modules/              # NestJS modules organizing features for different modes
+│   │   ├── cli-module.ts     # Module definition for CLI mode
+│   │   └── interactive-module.ts # Module definition for interactive mode
+│   ├── services/             # Core business logic and external interactions
+│   │   ├── backup.service.ts   # Handles mongodump execution and metadata
+│   │   ├── mongodb.service.ts  # Manages MongoDB connections and SSH tunnels
+│   │   ├── prompt-service.ts   # Provides interactive prompts using inquirer
+│   │   └── restore.service.ts  # Handles mongorestore execution
+│   ├── types/                # TypeScript type definitions and interfaces
+│   │   ├── index.ts          # Main type definitions
+│   │   └── yargs.d.ts        # Type definitions for yargs arguments
+│   ├── utils/                # Utility functions and helpers
+│   │   ├── config.ts         # Configuration loading and validation logic
+│   │   ├── formatter.ts      # Backup filename formatting
+│   │   ├── index.ts          # General utility functions (e.g., file operations)
+│   │   └── logger.ts         # Logging utility (e.g., Winston)
+│   ├── zod-schemas/          # Zod schemas for data validation
+│   │   └── config.schema.ts  # Zod schema for validating `config.json`
+│   └── .DS_Store             # macOS system file (can be ignored)
 ├── config.json               # Default configuration file
 ├── README.md                 # This file
-└── package.json
+└── package.json              # Project dependencies and scripts
 ```
 
 ## 🤝 Contributing
