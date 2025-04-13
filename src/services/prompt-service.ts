@@ -1,9 +1,7 @@
 import inquirer from 'inquirer';
-import type { AppConfig, ConnectionConfig, BackupMetadata, BackupPreset } from '../types';
+import type { ConnectionConfig, BackupMetadata, BackupPreset, AppConfig } from '../types';
 import { BackupService } from './backup.service';
 import { MongoDBService } from './mongodb.service';
-import { savePresets } from '../utils';
-import ora from 'ora';
 import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, formatISO, format } from 'date-fns';
 import { Logger } from '../utils/logger';
 
@@ -13,6 +11,7 @@ import { Logger } from '../utils/logger';
 export class PromptService {
   constructor(
     private readonly config: AppConfig,
+    private readonly updatedConfig: (updatedConfig: AppConfig) => void,
     private readonly backupService: BackupService,
     private readonly mongoService: MongoDBService,
     private readonly logger: Logger,
@@ -100,12 +99,12 @@ export class PromptService {
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
       let collections: string[] = [];
-      const fetchSpinner = ora(`Fetching collections from ${source.name}...`).start();
+      this.logger.startSpinner(`Fetching collections from ${source.name}...`);
       try {
         await this.mongoService.connect(source);
         collections = await this.mongoService.getCollections(source.database);
         await this.mongoService.close();
-        fetchSpinner.succeed(`Fetched ${collections.length} collections from ${source.name}.`);
+        this.logger.succeedSpinner(`Fetched ${collections.length} collections from ${source.name}.`);
 
         if (collections.length === 0) {
           return { source, selectedCollections: [], excludedCollections: [], selectionMode: 'all', startTime };
@@ -141,6 +140,7 @@ export class PromptService {
           excludedCollections = excluded;
         }
       } catch (error: any) {
+        this.logger.failSpinner(`Error fetching collections: ${error.message}`);
         throw error;
       }
     }
@@ -263,27 +263,27 @@ export class PromptService {
     let backupMetadata: BackupMetadata;
     try {
       backupMetadata = this.backupService.loadBackupMetadata(backupFile);
-      console.log('\n--- Selected Backup Metadata ---');
-      console.log(`Source Connection: ${backupMetadata.source}`);
-      console.log(`Database:          ${backupMetadata.database || 'N/A (Older Backup?)'}`);
-      console.log(`Created At:        ${new Date(backupMetadata.timestamp).toLocaleString()}`);
-      console.log(`Selection Mode:    ${backupMetadata.selectionMode}`);
+      this.logger.info('\n--- Selected Backup Metadata ---');
+      this.logger.info(`Source Connection: ${backupMetadata.source}`);
+      this.logger.info(`Database:          ${backupMetadata.database || 'N/A (Older Backup?)'}`);
+      this.logger.info(`Created At:        ${new Date(backupMetadata.timestamp).toLocaleString()}`);
+      this.logger.info(`Selection Mode:    ${backupMetadata.selectionMode}`);
       if (
         backupMetadata.selectionMode === 'include' &&
         Array.isArray(backupMetadata.includedCollections) &&
         backupMetadata.includedCollections.length > 0
       ) {
-        console.log(`Included Collections: ${backupMetadata.includedCollections.join(', ')}`);
+        this.logger.info(`Included Collections: ${backupMetadata.includedCollections.join(', ')}`);
       } else if (
         backupMetadata.selectionMode === 'exclude' &&
         Array.isArray(backupMetadata.excludedCollections) &&
         backupMetadata.excludedCollections.length > 0
       ) {
-        console.log(`Excluded Collections: ${backupMetadata.excludedCollections.join(', ')}`);
+        this.logger.info(`Excluded Collections: ${backupMetadata.excludedCollections.join(', ')}`);
       }
-      console.log('------------------------------\n');
+      this.logger.info('------------------------------\n');
     } catch (error: any) {
-      console.error(`\nError loading metadata for ${backupFile}: ${error.message}`);
+      this.logger.error(`Error loading metadata for ${backupFile}: ${error.message}`);
       throw new Error(`Failed to load metadata for selected backup: ${error.message}`);
     }
 
@@ -414,7 +414,7 @@ export class PromptService {
         await this.mongoService.close();
 
         if (allCollections.length === 0) {
-          console.log(
+          this.logger.info(
             `No collections found in ${source.database}. Preset will affect no collections if mode is include/exclude.`,
           );
         } else {
@@ -433,7 +433,7 @@ export class PromptService {
           collections = presetSelected;
         }
       } catch (error: any) {
-        console.error(`Error getting collection list: ${error.message}`);
+        this.logger.error(`Error getting collection list: ${error.message}`);
         const { manualCollections } = await inquirer.prompt({
           type: 'input',
           name: 'manualCollections',
@@ -449,20 +449,20 @@ export class PromptService {
       }
     }
 
-    console.log('\n--- Preset Configuration Summary ---');
-    console.log(`Name: ${name.trim()}`);
-    console.log(`Source: ${source.name} (${source.database})`);
-    console.log(`Mode: ${selectionMode}`);
+    this.logger.info('--- Preset Configuration Summary ---');
+    this.logger.info(`Name: ${name.trim()}`);
+    this.logger.info(`Source: ${source.name} (${source.database})`);
+    this.logger.info(`Mode: ${selectionMode}`);
     if (selectionMode === 'include') {
-      console.log(
+      this.logger.info(
         `Included Collections: ${collections.length > 0 ? collections.join(', ') : '(None selected - backup will be empty!)'}`,
       );
     } else if (selectionMode === 'exclude') {
-      console.log(
+      this.logger.info(
         `Excluded Collections: ${collections.length > 0 ? collections.join(', ') : '(None - all collections will be backed up)'}`,
       );
     }
-    console.log('----------------------------------\n');
+    this.logger.info('----------------------------------\n');
 
     return {
       name: name.trim(),
@@ -478,7 +478,7 @@ export class PromptService {
     const backupPresets = this.config.backupPresets || [];
 
     if (backupPresets.length === 0) {
-      console.log('No saved presets found. Please create a preset first.');
+      this.logger.info('No saved presets found. Please create a preset first.');
       return undefined;
     }
 
@@ -500,7 +500,7 @@ export class PromptService {
     });
 
     if (!selected) {
-      console.log('Preset management cancelled.');
+      this.logger.info('Preset management cancelled.');
       return undefined;
     }
 
@@ -520,9 +520,9 @@ export class PromptService {
       case 'use':
         return selected;
       case 'view':
-        console.log('\n--- Preset Details ---');
-        console.log(JSON.stringify(selected.preset, null, 2));
-        console.log('----------------------\n');
+        this.logger.info('--- Preset Details ---');
+        this.logger.info(JSON.stringify(selected.preset, null, 2));
+        this.logger.info('----------------------\n');
         return undefined;
       case 'delete':
         const { confirmDelete } = await inquirer.prompt({
@@ -538,18 +538,18 @@ export class PromptService {
           }
 
           try {
-            savePresets(this.config);
-            console.log(`Preset "${selected.preset.name}" deleted successfully.`);
+            this.updatedConfig(this.config);
+            this.logger.info(`Preset "${selected.preset.name}" deleted successfully.`);
           } catch (saveError: any) {
-            console.error(`Error saving configuration after deleting preset: ${saveError.message}`);
+            this.logger.error(`Error saving configuration after deleting preset: ${saveError.message}`);
           }
         } else {
-          console.log('Preset deletion cancelled.');
+          this.logger.info('Preset deletion cancelled.');
         }
         return undefined;
       case 'cancel':
       default:
-        console.log('Action cancelled.');
+        this.logger.info('Action cancelled.');
         return undefined;
     }
   }
@@ -560,7 +560,7 @@ export class PromptService {
    * @returns A promise that resolves with the new or updated preset configuration.
    */
   async promptForPreset(existingPreset?: BackupPreset): Promise<BackupPreset> {
-    console.log(existingPreset ? '\n--- Editing Backup Preset ---' : '\n--- Creating New Backup Preset ---');
+    this.logger.info(existingPreset ? '--- Editing Backup Preset ---' : '\n--- Creating New Backup Preset ---');
 
     const nameAnswer = await inquirer.prompt<{ name: string }>([
       {
@@ -600,11 +600,11 @@ export class PromptService {
     let queryStartTime: string | undefined = existingPreset?.queryStartTime;
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
-      const spinner = ora(`Fetching collections from ${source.name}...`).start();
+      this.logger.startSpinner(`Fetching collections from ${source.name}...`);
       try {
         await this.mongoService.connect(source);
         const allCollections = await this.mongoService.getCollections(source.database);
-        spinner.succeed(`Fetched ${allCollections.length} collections from ${source.name}.`);
+        this.logger.succeedSpinner(`Fetched ${allCollections.length} collections from ${source.name}.`);
 
         const collectionAnswer = await inquirer.prompt<{ collections: string[] }>([
           {
@@ -625,8 +625,8 @@ export class PromptService {
 
         if (selectionMode === 'include') {
           if (collections.length === 1) {
-            console.log('\n--- Time Filter (Optional) ---');
-            console.log('Applies only when using this preset.');
+            this.logger.info('\n--- Time Filter (Optional) ---');
+            this.logger.info('Applies only when using this preset.');
             const applyTimeFilterAnswer = await inquirer.prompt<{ apply: boolean }>([
               {
                 type: 'confirm',
@@ -642,21 +642,21 @@ export class PromptService {
               );
               queryStartTime = startTimeDate ? formatISO(startTimeDate) : undefined;
               if (queryStartTime) {
-                console.log(`Time filter set to: >= ${queryStartTime}`);
+                this.logger.info(`Time filter set to: >= ${queryStartTime}`);
               } else {
-                console.log('No time filter applied.');
+                this.logger.info('No time filter applied.');
               }
             } else {
               queryStartTime = undefined;
-              console.log('No time filter applied.');
+              this.logger.info('No time filter applied.');
             }
           } else if (queryStartTime) {
-            console.log('Info: Time filter cleared because more/less than one collection is selected.');
+            this.logger.info('Info: Time filter cleared because more/less than one collection is selected.');
             queryStartTime = undefined;
           }
         }
       } catch (error: any) {
-        spinner.fail(`Error fetching collections: ${error.message}`);
+        this.logger.failSpinner(`Error fetching collections: ${error.message}`);
         const { manualCollections } = await inquirer.prompt({
           type: 'input',
           name: 'manualCollections',
@@ -678,20 +678,20 @@ export class PromptService {
     } else {
       collections = [];
       if (queryStartTime) {
-        console.log('Info: Time filter cleared because mode is not \'include\'.');
+        this.logger.info('Info: Time filter cleared because mode is not "include".');
         queryStartTime = undefined;
       }
     }
 
-    console.log('\n--- Preset Configuration Summary ---');
-    console.log(`Name: ${name}`);
-    console.log(`Source: ${source.name} (${source.database})`);
-    console.log(`Mode: ${selectionMode}`);
+    this.logger.info('\n--- Preset Configuration Summary ---');
+    this.logger.info(`Name: ${name}`);
+    this.logger.info(`Source: ${source.name} (${source.database})`);
+    this.logger.info(`Mode: ${selectionMode}`);
     if (selectionMode !== 'all') {
-      console.log(`Collections: ${collections.length > 0 ? collections.join(', ') : '(none)'}`);
+      this.logger.info(`Collections: ${collections.length > 0 ? collections.join(', ') : '(none)'}`);
     }
     if (queryStartTime) {
-      console.log(`Time Filter: >= ${queryStartTime}`);
+      this.logger.info(`Time Filter: >= ${queryStartTime}`);
     }
 
     return {

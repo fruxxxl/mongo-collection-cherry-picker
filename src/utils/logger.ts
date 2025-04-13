@@ -1,12 +1,8 @@
 import ora, { Ora } from 'ora';
 import chalk from 'chalk';
 
-/**
- * Centralized logger service for handling console output and spinners.
- * Uses 'ora' for spinners and 'chalk' for colors.
- */
 export class Logger {
-  private spinner: Ora | null = null;
+  spinner: Ora | null = null;
   private isDebugEnabled: boolean;
   private prefix: string;
   /**
@@ -25,7 +21,7 @@ export class Logger {
    * @param messages - The message(s) to log.
    */
   info(...messages: any[]): void {
-    const formattedMessage = messages.map((msg) => chalk.blue(`${this.prefix} ${msg}`)).join(' ');
+    const formattedMessage = messages.map((msg) => `${chalk.green(`[${this.prefix}]`)} ${chalk.blue(msg)}`).join(' ');
 
     if (this.spinner?.isSpinning) {
       this.spinner.stopAndPersist({ text: formattedMessage, symbol: 'ℹ️' });
@@ -35,13 +31,26 @@ export class Logger {
     }
   }
 
+  snippet(codeString: string): void {
+    const lines = codeString.split('\n');
+    const maxLength = Math.max(...lines.map((line) => line.length));
+    const borderLength = Math.min(maxLength + 2, 20);
+    const border = `=${'='.repeat(borderLength)}=`;
+
+    console.log(chalk.cyan(`${border}{${this.prefix}} command${border}`));
+    lines.forEach((line) => {
+      console.log(chalk.grey(line));
+    });
+    console.log(chalk.cyan(border));
+  }
+
   /**
    * Logs a warning message.
    * Stops the spinner temporarily if active.
    * @param messages - The warning message(s).
    */
   warn(...messages: any[]): void {
-    const formattedMessage = messages.map((msg) => chalk.yellow(`${this.prefix} ${msg}`)).join(' ');
+    const formattedMessage = messages.map((msg) => `${chalk.green(`[${this.prefix}]`)} ${chalk.yellow(msg)}`).join(' ');
 
     if (this.spinner?.isSpinning) {
       this.spinner.warn(formattedMessage);
@@ -64,7 +73,7 @@ export class Logger {
         }
         return msg;
       })
-      .map((msg) => chalk.red(`${this.prefix} ${msg}`))
+      .map((msg) => `${chalk.green(`[${this.prefix}]`)} ${chalk.red(msg)}`)
       .join(' ');
 
     if (this.spinner?.isSpinning) {
@@ -89,7 +98,9 @@ export class Logger {
     if (!this.isDebugEnabled) {
       return;
     }
-    const formattedMessage = messages.map((msg) => chalk.grey(`${this.prefix} [Debug] ${msg}`)).join(' ');
+    const formattedMessage = messages
+      .map((msg) => `${chalk.green(`[${this.prefix}]`)} ${chalk.grey(`[Debug] ${msg}`)}`)
+      .join(' ');
 
     if (this.spinner?.isSpinning) {
       this.spinner.stop();
@@ -109,7 +120,7 @@ export class Logger {
     if (this.spinner?.isSpinning) {
       this.spinner.stop(); // Stop previous spinner
     }
-    this.spinner = ora(message).start();
+    this.spinner = ora(`${chalk.green(`[${this.prefix}]`)} ${message}`).start();
   }
 
   /**
@@ -119,7 +130,7 @@ export class Logger {
    */
   updateSpinner(message: string): void {
     if (this.spinner?.isSpinning) {
-      this.spinner.text = message;
+      this.spinner.text = `${chalk.green(`[${this.prefix}]`)} ${message}`;
     }
   }
 
@@ -140,7 +151,7 @@ export class Logger {
    */
   succeedSpinner(message?: string): void {
     if (this.spinner?.isSpinning) {
-      this.spinner.succeed(message); // Ora handles colors
+      this.spinner.succeed(message ? `${chalk.green(`[${this.prefix}]`)} ${message}` : undefined);
       this.spinner = null;
     }
   }
@@ -151,7 +162,7 @@ export class Logger {
    */
   failSpinner(message?: string): void {
     if (this.spinner?.isSpinning) {
-      this.spinner.fail(message); // Ora handles colors
+      this.spinner.fail(message ? `${chalk.green(`[${this.prefix}]`)} ${message}` : undefined);
       this.spinner = null;
     }
   }
@@ -164,7 +175,7 @@ export class Logger {
    */
   persistSpinnerInfo(text: string, symbol = 'ℹ️'): void {
     if (this.spinner?.isSpinning) {
-      this.spinner.stopAndPersist({ text, symbol });
+      this.spinner.stopAndPersist({ text: `${chalk.green(`[${this.prefix}]`)} ${text}`, symbol });
       this.spinner = null;
     }
   }
@@ -177,10 +188,10 @@ export class Logger {
   logRaw(data: any): void {
     if (this.spinner?.isSpinning) {
       this.spinner.stop();
-      console.log(data);
+      console.log(`${chalk.green(`[${this.prefix}]`)} ${data}`);
       this.spinner.start();
     } else {
-      console.log(data);
+      console.log(`${chalk.green(`[${this.prefix}]`)} ${data}`);
     }
   }
 }

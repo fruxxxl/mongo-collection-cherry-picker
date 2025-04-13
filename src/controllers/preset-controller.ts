@@ -1,17 +1,17 @@
 import inquirer from 'inquirer';
-import { savePresets } from '../utils';
 import { PromptService } from '../services/prompt-service';
-import { BackupManager } from './backup-manager';
+import { BackupController } from './backup-controller';
 import { AppConfig, BackupPreset } from '../types/index';
 import { Logger } from '../utils/logger';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
  */
-export class PresetManager {
+export class PresetController {
   constructor(
     private readonly config: AppConfig,
-    private readonly backupManager: BackupManager,
+    private readonly updatedConfig: (updatedConfig: AppConfig) => void,
+    private readonly backupController: BackupController,
     private readonly promptService: PromptService,
     private readonly logger: Logger,
   ) {
@@ -25,13 +25,12 @@ export class PresetManager {
    * Optionally runs the newly created preset immediately.
    */
   async createBackupPreset(): Promise<void> {
-    console.log('\n--- Create New Backup Preset ---');
     try {
       const newPreset = await this.promptService.promptForPreset();
 
       // Check for duplicate name
       if (this.config.backupPresets?.some((p) => p.name === newPreset.name)) {
-        console.warn(
+        this.logger.warn(
           `Warning: A preset with the name "${newPreset.name}" already exists. Overwriting is not supported via creation. Please edit or delete the existing preset.`,
         );
         return;
@@ -39,8 +38,8 @@ export class PresetManager {
 
       this.config.backupPresets = this.config.backupPresets || [];
       this.config.backupPresets.push(newPreset);
-      savePresets(this.config);
-      console.log(`\n✔ Backup preset "${newPreset.name}" created successfully!`);
+      this.updatedConfig(this.config);
+      this.logger.succeedSpinner(`Backup preset "${newPreset.name}" created successfully!`);
 
       // Ask if the user wants to run the new preset right away
       const { useNow } = await inquirer.prompt({
@@ -51,11 +50,11 @@ export class PresetManager {
       });
 
       if (useNow) {
-        // Use the BackupManager to execute the preset
-        await this.backupManager.useBackupPreset(newPreset);
+        // Use the backupController to execute the preset
+        await this.backupController.useBackupPreset(newPreset);
       }
     } catch (error: any) {
-      console.error(`\n✖ Error creating backup preset: ${error.message}`);
+      this.logger.failSpinner(`Error creating backup preset: ${error.message}`);
     }
   }
 
@@ -64,7 +63,7 @@ export class PresetManager {
    * Fetches the list of presets and prompts the user for actions.
    */
   async managePresets(): Promise<void> {
-    console.log('\n--- Manage Existing Presets ---');
+    this.logger.info('--- Manage Existing Presets ---');
     try {
       // Use prompt service to handle preset selection and action
       const selection = await this.promptService.managePresets();
@@ -72,15 +71,15 @@ export class PresetManager {
       // If a preset was selected and the action was 'use'
       if (selection && selection.type === 'backup') {
         // Currently only handles backup presets
-        console.log(`\nProceeding to use selected preset: "${selection.preset.name}"`);
-        // Use the BackupManager to execute the selected preset
-        await this.backupManager.useBackupPreset(selection.preset);
+        this.logger.info(`Proceeding to use selected preset: "${selection.preset.name}"`);
+        // Use the backupController to execute the selected preset
+        await this.backupController.useBackupPreset(selection.preset);
       } else {
         // User cancelled, viewed details, or deleted a preset (handled within promptService/managePresets)
-        console.log('\nReturning to main menu or exiting.');
+        this.logger.info('Returning to main menu or exiting.');
       }
     } catch (error: any) {
-      console.error(`\n✖ Error managing presets: ${error.message}`);
+      this.logger.failSpinner(`Error managing presets: ${error.message}`);
     }
   }
 

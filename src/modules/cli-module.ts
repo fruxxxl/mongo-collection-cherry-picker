@@ -3,51 +3,44 @@ import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } f
 
 import { AppConfig } from '../types';
 
-import { loadConfig, parseCommandLineArgs } from '../utils';
-import { BackupManager } from '../controllers/backup-manager';
-import { RestoreManager } from '../controllers/restore-manager';
+import { parseCommandLineArgs } from '../utils';
+import { BackupController } from '../controllers/backup-controller';
+import { RestoreController } from '../controllers/restore-controller';
 import { BackupService } from '../services/backup.service';
 import { Logger } from '../utils/logger';
 import { RestoreService } from '../services/restore.service';
 import { MongoDBService } from '../services/mongodb.service';
 import { PromptService } from '../services/prompt-service';
+import { Config } from '../utils/config';
 
 export class CLIModule {
   private args: CommandLineArgs;
   private config: AppConfig;
-  private promptService: PromptService;
-  private backupManager: BackupManager;
-  private restoreManager: RestoreManager;
+  private backupController: BackupController;
+  private restoreController: RestoreController;
 
   constructor(configPath: string) {
     this.args = parseCommandLineArgs();
-    this.config = loadConfig(configPath);
+    this.config = new Config(configPath, new Logger({ prefix: Config.name })).parsed;
 
-    const backupService = new BackupService(this.config, new Logger({ prefix: 'BackupService' }));
-    const mongoService = new MongoDBService(this.config, new Logger({ prefix: 'MongoDBService' }));
-    const restoreService = new RestoreService(this.config, new Logger({ prefix: 'RestoreService' }));
+    const backupService = new BackupService(this.config, new Logger({ prefix: BackupService.name }));
+    const mongoService = new MongoDBService(new Logger({ prefix: MongoDBService.name }));
+    const restoreService = new RestoreService(this.config, new Logger({ prefix: RestoreService.name }));
 
-    this.promptService = new PromptService(
+    this.backupController = new BackupController(
       this.config,
-      backupService,
-      mongoService,
-      new Logger({ prefix: 'PromptService' }),
-    );
-
-    this.backupManager = new BackupManager(
-      this.config,
-      this.promptService,
+      {} as PromptService,
       mongoService,
       backupService,
-      new Logger({ prefix: 'BackupManager' }),
+      new Logger({ prefix: BackupController.name }),
     );
 
-    this.restoreManager = new RestoreManager(
+    this.restoreController = new RestoreController(
       this.config,
       backupService,
-      this.promptService,
+      {} as PromptService,
       restoreService,
-      new Logger({ prefix: 'RestoreManager' }),
+      new Logger({ prefix: RestoreController.name }),
     );
   }
 
@@ -80,7 +73,7 @@ export class CLIModule {
         throw new Error(`Backup preset "${this.args.preset}" not found in configuration.`);
       }
       console.log(`Using backup preset: ${preset.name}`);
-      await this.backupManager.useBackupPreset(preset);
+      await this.backupController.useBackupPreset(preset);
     } else if (this.args.source) {
       const backupMode = this.args.backupMode || 'all';
       const collections = this.args.collections || [];
@@ -124,7 +117,7 @@ export class CLIModule {
 
       try {
         // Pass arguments to the manager
-        await this.backupManager.backupFromArgs(
+        await this.backupController.backupFromArgs(
           this.args.source,
           backupMode as 'all' | 'include' | 'exclude', // Type assertion is okay after validation
           collections,
@@ -156,7 +149,7 @@ export class CLIModule {
       drop: this.args.drop || false,
     };
 
-    await this.restoreManager.runRestore(this.args.backupFile, this.args.target, restoreOptions);
+    await this.restoreController.runRestore(this.args.backupFile, this.args.target, restoreOptions);
   }
 
   /** Parses the --since-time argument string into a Date object */

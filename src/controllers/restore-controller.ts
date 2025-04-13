@@ -11,7 +11,7 @@ import { Logger } from '../utils/logger';
 /**
  * Manages the restore process, coordinating user prompts (if needed) and the RestoreService.
  */
-export class RestoreManager {
+export class RestoreController {
   constructor(
     private readonly config: AppConfig,
     private readonly backupService: BackupService,
@@ -30,7 +30,7 @@ export class RestoreManager {
    * @throws An error if the target connection or backup file is not found, or if metadata loading/restore fails.
    */
   async runRestore(backupFilename: string, targetName: string, options: { drop: boolean }): Promise<void> {
-    const spinner = ora(`Preparing restore for ${backupFilename} to ${targetName}...`).start();
+    this.logger.startSpinner(`Preparing restore for ${backupFilename} to ${targetName}...`);
     try {
       const targetConfig = this.config.connections.find((c) => c.name === targetName);
       if (!targetConfig) {
@@ -40,23 +40,23 @@ export class RestoreManager {
         throw new Error(`Target connection "${targetName}" must have a 'database' field defined for restore.`);
       }
 
-      spinner.text = `Loading metadata for ${backupFilename}...`;
+      this.logger.updateSpinner(`Loading metadata for ${backupFilename}...`);
       let backupMetadata: BackupMetadata;
       try {
         backupMetadata = this.backupService.loadBackupMetadata(backupFilename);
-        spinner.text = `Loaded metadata for ${backupFilename}. Source DB: ${backupMetadata.database || 'N/A'}`;
-        console.log('\n--- Backup Metadata ---');
-        console.log(`Source:   ${backupMetadata.source}`);
-        console.log(`Database: ${backupMetadata.database || 'N/A'}`);
-        console.log(`Created:  ${new Date(backupMetadata.timestamp).toLocaleString()}`);
-        console.log(`Mode:     ${backupMetadata.selectionMode}`);
+        this.logger.info(`Loaded metadata for ${backupFilename}. Source DB: ${backupMetadata.database || 'N/A'}`);
+        this.logger.logRaw('--- Backup Metadata ---');
+        this.logger.logRaw(`Source:   ${backupMetadata.source}`);
+        this.logger.logRaw(`Database: ${backupMetadata.database || 'N/A'}`);
+        this.logger.logRaw(`Created:  ${new Date(backupMetadata.timestamp).toLocaleString()}`);
+        this.logger.logRaw(`Mode:     ${backupMetadata.selectionMode}`);
         if (backupMetadata.includedCollections?.length) {
-          console.log(`Included: ${backupMetadata.includedCollections.join(', ')}`);
+          this.logger.logRaw(`Included: ${backupMetadata.includedCollections.join(', ')}`);
         }
         if (backupMetadata.excludedCollections?.length) {
-          console.log(`Excluded: ${backupMetadata.excludedCollections.join(', ')}`);
+          this.logger.logRaw(`Excluded: ${backupMetadata.excludedCollections.join(', ')}`);
         }
-        console.log('-----------------------\n');
+        this.logger.logRaw('-----------------------\n');
       } catch (error: any) {
         throw new Error(`Failed to load metadata for backup "${backupFilename}": ${error.message}`);
       }
@@ -69,23 +69,22 @@ export class RestoreManager {
         );
       }
 
-      spinner.stop();
-
-      console.log(`\nInitiating restore process for ${backupFilename} to ${targetName}...`);
+      this.logger.stopSpinner();
+      this.logger.info(`Initiating restore process for ${backupFilename} to ${targetName}...`);
 
       await this.restoreService.restoreBackup(backupMetadata, targetConfig, options);
 
-      spinner.succeed(
+      this.logger.succeedSpinner(
         `Backup "${backupFilename}" successfully restored to target "${targetName}" (Database: ${targetConfig.database})`,
       );
     } catch (error: any) {
-      if (spinner.isSpinning) {
-        spinner.fail(`Restore operation failed: ${error.message}`);
+      if (this.logger.spinner?.isSpinning) {
+        this.logger.failSpinner(`Restore operation failed: ${error.message}`);
       } else {
-        console.error(`\n✖ Restore operation failed: ${error.message}`);
+        this.logger.error(`\n✖ Restore operation failed: ${error.message}`);
       }
-      if (spinner.isSpinning) {
-        spinner.stop();
+      if (this.logger.spinner?.isSpinning) {
+        this.logger.stopSpinner();
       }
     }
   }
@@ -95,15 +94,15 @@ export class RestoreManager {
    * Prompts the user for backup file and target, then calls runRestore.
    */
   async restoreDatabase(): Promise<void> {
-    const spinner = ora('Starting interactive restore...').start();
+    this.logger.startSpinner('Starting interactive restore...');
     try {
-      spinner.stop();
+      this.logger.stopSpinner();
       const { backupFile, target, options } = await this.promptService.promptForRestore();
-      spinner.start(`Preparing restore for ${backupFile} to ${target.name}...`);
+      this.logger.startSpinner(`Preparing restore for ${backupFile} to ${target.name}...`);
 
       await this.runRestore(backupFile, target.name, options);
     } catch (error: any) {
-      spinner.fail(`Interactive restore failed: ${error.message}`);
+      this.logger.failSpinner(`Interactive restore failed: ${error.message}`);
     }
   }
 
@@ -148,8 +147,8 @@ export class RestoreManager {
       commandArgs.push('--drop');
     }
 
-    console.log('\nCommand to be executed:');
-    console.log(`mongorestore ${commandArgs.join(' ')}\n`);
+    this.logger.info('\nCommand to be executed:');
+    this.logger.info(`mongorestore ${commandArgs.join(' ')}\n`);
 
     const { confirm } = await inquirer.prompt({
       type: 'confirm',
@@ -159,12 +158,12 @@ export class RestoreManager {
     });
 
     if (confirm) {
-      const spinner = ora('Restoring backup...').start();
+      this.logger.startSpinner('Restoring backup...');
       try {
         await this.restoreService.restoreBackup(backupMetadata, target, options);
-        spinner.succeed(`Backup successfully restored to database ${target.database}`);
+        this.logger.succeedSpinner(`Backup successfully restored to database ${target.database}`);
       } catch (error) {
-        spinner.fail(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
+        this.logger.failSpinner(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }

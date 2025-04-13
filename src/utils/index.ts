@@ -1,7 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import type { AppConfig, CommandLineArgs } from '../types';
-import { AppConfigSchema } from '../zod-schemas/config.schema';
+import type { CommandLineArgs } from '../types';
+import { URLSearchParams } from 'url';
 
 /**
  * Parses command line arguments passed to the application.
@@ -138,41 +136,6 @@ export function parseCommandLineArgs(): CommandLineArgs {
   };
 }
 
-/**
- * Loads the application configuration from a JSON file.
- * Validates the configuration against the AppConfigSchema.
- *
- * @param configPath - The path to the configuration file.
- * @returns The validated application configuration object.
- * @throws An error if the file cannot be read, parsed, or validated.
- */
-export function loadConfig(configPath: string): AppConfig {
-  try {
-    const absolutePath = path.resolve(configPath);
-    console.log(`Loading configuration from: ${absolutePath}`);
-    if (!fs.existsSync(absolutePath)) {
-      throw new Error(`Configuration file not found at ${absolutePath}`);
-    }
-    const configJson = fs.readFileSync(absolutePath, 'utf8');
-    const configData = JSON.parse(configJson);
-
-    const validationResult = AppConfigSchema.safeParse(configData);
-    if (!validationResult.success) {
-      console.error('Configuration validation failed:');
-      validationResult.error.errors.forEach((err) => {
-        console.error(`  Path: ${err.path.join('.') || '.'}, Message: ${err.message}`);
-      });
-      throw new Error('Invalid configuration file structure.');
-    }
-
-    console.log('Configuration loaded and validated successfully.');
-    return validationResult.data;
-  } catch (error: any) {
-    console.error(`Error loading or parsing configuration file "${configPath}": ${error.message}`);
-    throw error;
-  }
-}
-
 export function formatDate(date: Date): string {
   return date.toLocaleString('en-US', {
     year: 'numeric',
@@ -197,23 +160,54 @@ export function formatSize(bytes: number): string {
   return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
-/**
- * Saves the updated presets array back to the configuration file.
- * Reads the existing config, updates the presets, and writes it back.
- * **Note:** This performs a full read/write cycle. Consider partial updates for large configs if needed.
- *
- * @param updatedConfig - The AppConfig object containing the potentially modified presets array.
- * @param configPath - The path to the configuration file (defaults to './config.json').
- * @throws An error if reading or writing the config file fails.
- */
-export function savePresets(updatedConfig: AppConfig, configPath: string = './config.json'): void {
-  try {
-    const absolutePath = path.resolve(configPath);
-    const configString = JSON.stringify(updatedConfig, null, 2);
-    fs.writeFileSync(absolutePath, configString, 'utf8');
-    console.log(`Configuration presets saved successfully to: ${absolutePath}`);
-  } catch (error: any) {
-    console.error(`Error saving presets to configuration file "${configPath}": ${error.message}`);
-    throw error;
+export function parseMongoUri(uri: string): {
+  user?: string;
+  password?: string;
+  hosts: { host: string; port: number }[];
+  database?: string;
+  options: Record<string, string>;
+} {
+  const mongoUriRegex = /^mongodb:\/\/(?:([^:]+)(?::([^@]+))?@)?([^/?]+)(?:\/([^?]+))?(?:\?(.+))?$/;
+  let match = uri.match(mongoUriRegex);
+
+  if (!match) {
+    const uriWithSlash = uri.includes('?') && !uri.includes('/?') ? uri.replace('?', '/?') : uri;
+    const fallbackMatch = uriWithSlash.match(mongoUriRegex);
+    if (!fallbackMatch) {
+      // Consider using logger here if available globally or passed
+      console.error('Failed to parse URI with regex:', uri);
+      throw new Error('Invalid MongoDB URI format');
+    }
+    // Consider using logger here
+    console.warn('Parsed URI using fallback with added slash.');
+    match = fallbackMatch;
   }
+
+  const [, user, password, hostString, database, optionString] = match!;
+
+  const hosts = hostString.split(',').map((hostPort) => {
+    const parts = hostPort.split(':');
+    const host = parts[0];
+    const port = parseInt(parts[1] || '27017', 10);
+    if (isNaN(port)) {
+      throw new Error(`Invalid port number in host string: ${hostPort}`);
+    }
+    return { host, port };
+  });
+
+  const options: Record<string, string> = {};
+  if (optionString) {
+    const params = new URLSearchParams(optionString);
+    params.forEach((value, key) => {
+      options[key] = value;
+    });
+  }
+
+  return {
+    user: user ? decodeURIComponent(user) : undefined,
+    password: password ? decodeURIComponent(password) : undefined,
+    hosts,
+    database: database ? database.split('/')[0] : undefined,
+    options,
+  };
 }

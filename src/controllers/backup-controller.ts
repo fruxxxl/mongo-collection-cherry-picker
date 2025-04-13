@@ -13,7 +13,7 @@ import { Logger } from '../utils/logger';
 /**
  * Manages the backup process, coordinating user prompts, backup service, and metadata generation.
  */
-export class BackupManager {
+export class BackupController {
   constructor(
     private readonly config: AppConfig,
     private readonly promptService: PromptService,
@@ -27,46 +27,43 @@ export class BackupManager {
    * Prompts the user for source, mode, and collections, then performs the backup.
    */
   async backupDatabase(): Promise<void> {
-    const spinner = ora('Starting interactive backup...').start();
-    let source: ConnectionConfig | undefined; // Define source here for finally block
+    this.logger.startSpinner('Starting interactive backup...');
+    let source: ConnectionConfig | undefined;
     try {
-      spinner.stop();
+      this.logger.stopSpinner();
 
-      // Get user intent including potential startTime
       const {
-        source: promptedSource, // Rename to avoid conflict in scope
-        selectedCollections: intendedIncluded, // User's selection for include
-        excludedCollections: intendedExcluded, // User's selection for exclude
+        source: promptedSource,
+        selectedCollections: intendedIncluded,
+        excludedCollections: intendedExcluded,
         selectionMode: intendedMode,
-        startTime, // Will be defined only if mode=include and 1 collection selected
+        startTime,
       } = await this.promptService.promptForBackup();
-      source = promptedSource; // Assign to outer scope variable
+      source = promptedSource;
 
-      spinner.start(`Preparing backup for ${source.name}...`);
+      this.logger.startSpinner(`Preparing backup for ${source.name}...`);
       if (startTime) {
-        spinner.text = `Preparing backup for ${source.name}, collection ${intendedIncluded[0]} (since ${startTime.toISOString()})...`;
+        this.logger.updateSpinner(
+          `Preparing backup for ${source.name}, collection ${intendedIncluded[0]} (since ${startTime.toISOString()})...`,
+        );
       }
 
       let actualMode: 'all' | 'include' | 'exclude';
-      let actualSelected: string[] = []; // Collections for --collection flag
-      let actualExcluded: string[] = []; // Collections for --excludeCollection flag
-      const collectionsListForMetadata = intendedIncluded.length > 0 ? intendedIncluded : intendedExcluded; // For metadata
+      let actualSelected: string[] = [];
+      let actualExcluded: string[] = [];
+      const collectionsListForMetadata = intendedIncluded.length > 0 ? intendedIncluded : intendedExcluded;
 
-      // --- Determine actual parameters for mongodump ---
       if (startTime) {
-        // Time filter case: Must use --collection
-        actualMode = 'include'; // Force include mode for backup service
-        actualSelected = intendedIncluded; // Should be the single selected collection
+        actualMode = 'include';
+        actualSelected = intendedIncluded;
         actualExcluded = [];
-        spinner.text = `Running backup for single collection ${actualSelected[0]} with time filter...`;
+        this.logger.updateSpinner(`Running backup for single collection ${actualSelected[0]} with time filter...`);
       } else {
-        // No time filter - use existing logic
-        spinner.text = `Calculating collections for ${source.name}...`;
+        this.logger.updateSpinner(`Calculating collections for ${source.name}...`);
         if (intendedMode === 'include') {
-          // Transform 'include' intent to 'exclude' command if multiple collections or no time filter
           if (intendedIncluded.length === 0) {
-            console.warn(
-              'Warning: Include mode selected but no collections were chosen or fetched. Backing up all collections.',
+            this.logger.warn(
+              'Include mode selected but no collections were chosen or fetched. Backing up all collections.',
             );
             actualMode = 'all';
           } else {
@@ -78,25 +75,25 @@ export class BackupManager {
               actualExcluded = allCollections.filter((coll) => !intendedIncluded.includes(coll));
 
               if (actualExcluded.length === 0 && allCollections.length > 0) {
-                console.log(
-                  `Info: All collections in ${source.database} were specified for inclusion. Switching to 'all' mode.`,
+                this.logger.info(
+                  `All collections in ${source.database} were specified for inclusion. Switching to 'all' mode.`,
                 );
                 actualMode = 'all';
-                actualSelected = []; // Ensure empty
+                actualSelected = [];
               } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-                console.warn(
-                  `Warning: None of the specified collections (${intendedIncluded.join(', ')}) were found. Backing up all collections (excluding none).`,
+                this.logger.warn(
+                  `None of the specified collections (${intendedIncluded.join(', ')}) were found. Backing up all collections (excluding none).`,
                 );
-                actualMode = 'all'; // Effectively all if nothing to exclude
-                actualExcluded = []; // Ensure empty
+                actualMode = 'all';
+                actualExcluded = [];
               } else {
-                console.log(`Info: Will exclude collections: ${actualExcluded.join(', ')}`);
+                this.logger.info(`Will exclude collections: ${actualExcluded.join(', ')}`);
                 actualMode = 'exclude';
-                actualSelected = []; // Ensure empty
+                actualSelected = [];
               }
             } catch (error: any) {
-              spinner.fail(`Failed to fetch all collections to calculate exclusions: ${error.message}`);
-              console.warn('Falling back to backing up all collections.');
+              this.logger.failSpinner(`Failed to fetch all collections to calculate exclusions: ${error.message}`);
+              this.logger.warn('Falling back to backing up all collections.');
               actualMode = 'all';
               actualSelected = [];
               actualExcluded = [];
@@ -104,29 +101,27 @@ export class BackupManager {
           }
         } else if (intendedMode === 'exclude') {
           actualMode = 'exclude';
-          actualExcluded = intendedExcluded; // Use directly provided exclusions
+          actualExcluded = intendedExcluded;
           actualSelected = [];
-          console.log(`Info: Excluding collections: ${actualExcluded.join(', ')}`);
+          this.logger.info(`Excluding collections: ${actualExcluded.join(', ')}`);
         } else {
-          // intendedMode === 'all'
           actualMode = 'all';
           actualSelected = [];
           actualExcluded = [];
-          console.log('Info: Backing up all collections.');
+          this.logger.info('Backing up all collections.');
         }
       }
-      // --- End Parameter Determination ---
 
-      spinner.stop();
+      this.logger.stopSpinner();
       const backupFilename = await this.backupService.createBackup(
         source,
-        actualSelected, // Use calculated selected (only for single collection + time)
-        actualExcluded, // Use calculated excluded
-        actualMode, // Use calculated mode ('include', 'exclude', or 'all')
-        startTime, // Pass startTime
+        actualSelected,
+        actualExcluded,
+        actualMode,
+        startTime,
       );
 
-      spinner.start(`Saving metadata for ${backupFilename}...`);
+      this.logger.startSpinner(`Saving metadata for ${backupFilename}...`);
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
@@ -137,30 +132,26 @@ export class BackupManager {
         timestamp: now.getTime(),
         date: now.toISOString(),
         archivePath: path.basename(backupFilename),
-        presetName: undefined, // Not using preset here
-        queryStartTime: startTime ? startTime.toISOString() : undefined, // Save if time filter was used
+        presetName: undefined,
+        queryStartTime: startTime ? startTime.toISOString() : undefined,
       };
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-      spinner.succeed(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
+      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
     } catch (error: any) {
-      // Ensure spinner stops on error
-      if (spinner.isSpinning) {
-        spinner.fail(`Interactive backup failed: ${error.message}`);
+      if (this.logger.spinner?.isSpinning) {
+        this.logger.failSpinner(`Interactive backup failed: ${error.message}`);
       } else {
-        // If spinner was already stopped (e.g., error during prompts), just log
-        console.error(`Interactive backup failed: ${error.message}`);
+        this.logger.error(`Interactive backup failed: ${error.message}`);
       }
     } finally {
-      // Ensure connection is closed even on error during prompts/backup
       if (source && this.mongoService.getClient()) {
         await this.mongoService.close();
-        console.log(`[${source.name}] Connection closed.`);
+        this.logger.info(`[${source.name}] Connection closed.`);
       }
-      // Ensure spinner is stopped if it's still running somehow
-      if (spinner.isSpinning) {
-        spinner.stop();
+      if (this.logger.spinner?.isSpinning) {
+        this.logger.stopSpinner();
       }
     }
   }

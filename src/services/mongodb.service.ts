@@ -1,64 +1,13 @@
 import { MongoClient, Db, ListCollectionsCursor } from 'mongodb';
-import { AppConfig, ConnectionConfig, SSHConfig } from '../types/index';
+import { ConnectionConfig, SSHConfig } from '../types/index';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { URLSearchParams } from 'url';
+
 import { Logger } from '../utils/logger'; // Keep Logger import
 import { createTunnel } from 'tunnel-ssh'; // Ensure createTunnel is imported
 import type { Server } from 'net'; // Keep Server type from net for the tunnel instance
-
-function parseMongoUri(uri: string): {
-  user?: string;
-  password?: string;
-  hosts: { host: string; port: number }[];
-  database?: string;
-  options: Record<string, string>;
-} {
-  const mongoUriRegex = /^mongodb:\/\/(?:([^:]+)(?::([^@]+))?@)?([^/?]+)(?:\/([^?]+))?(?:\?(.+))?$/;
-  let match = uri.match(mongoUriRegex);
-
-  if (!match) {
-    const uriWithSlash = uri.includes('?') && !uri.includes('/?') ? uri.replace('?', '/?') : uri;
-    const fallbackMatch = uriWithSlash.match(mongoUriRegex);
-    if (!fallbackMatch) {
-      // Consider using logger here if available globally or passed
-      console.error('Failed to parse URI with regex:', uri);
-      throw new Error('Invalid MongoDB URI format');
-    }
-    // Consider using logger here
-    console.warn('Parsed URI using fallback with added slash.');
-    match = fallbackMatch;
-  }
-
-  const [, user, password, hostString, database, optionString] = match!;
-
-  const hosts = hostString.split(',').map((hostPort) => {
-    const parts = hostPort.split(':');
-    const host = parts[0];
-    const port = parseInt(parts[1] || '27017', 10);
-    if (isNaN(port)) {
-      throw new Error(`Invalid port number in host string: ${hostPort}`);
-    }
-    return { host, port };
-  });
-
-  const options: Record<string, string> = {};
-  if (optionString) {
-    const params = new URLSearchParams(optionString);
-    params.forEach((value, key) => {
-      options[key] = value;
-    });
-  }
-
-  return {
-    user: user ? decodeURIComponent(user) : undefined,
-    password: password ? decodeURIComponent(password) : undefined,
-    hosts,
-    database: database ? database.split('/')[0] : undefined,
-    options,
-  };
-}
+import { parseMongoUri } from '../utils';
 
 /**
  * Provides services for connecting to MongoDB instances,
@@ -70,13 +19,9 @@ export class MongoDBService {
 
   /**
    * Creates an instance of MongoDBService.
-   * @param config - The application configuration.
    * @param logger - The logger service instance.
    */
-  constructor(
-    private readonly config: AppConfig,
-    private readonly logger: Logger,
-  ) {}
+  constructor(private readonly logger: Logger) {}
 
   /**
    * Establishes a connection to a MongoDB instance based on the provided configuration.

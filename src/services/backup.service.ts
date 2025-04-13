@@ -51,12 +51,14 @@ export class BackupService {
     const backupDir = path.resolve(this.config.backupDir);
     const filePath = path.join(backupDir, filename);
 
+    this.logger.startSpinner('Starting backup process...');
+
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
-      this.logger.info(`Created backup directory: ${backupDir}`);
+      this.logger.succeedSpinner(`Created backup directory: ${backupDir}`);
     }
 
-    this.logger.info(`Backup archive will be saved to: ${filePath}`);
+    this.logger.updateSpinner(`Backup archive will be saved to: ${filePath}`);
 
     const baseArgs: string[] = [];
     let queryValue: string | undefined = undefined;
@@ -175,6 +177,9 @@ export class BackupService {
     // --- End Filtering Arguments ---
 
     baseArgs.push('--gzip');
+    if (!queryValue) {
+      baseArgs.push('--forceTableScan');
+    }
 
     const mongodumpPath = this.config.mongodumpPath || 'mongodump';
     let commandStringForLog = '';
@@ -182,7 +187,7 @@ export class BackupService {
     try {
       if (source.ssh) {
         // --- SSH Execution with NodeSSH ---
-        this.logger.info(`Executing mongodump via SSH to ${source.ssh.host} using node-ssh...`);
+        this.logger.updateSpinner(`Executing mongodump via SSH to ${source.ssh.host} using node-ssh...`);
         const ssh = new NodeSSH();
 
         const remoteArgs = [...baseArgs];
@@ -219,9 +224,10 @@ export class BackupService {
         const remoteCommand = remoteCommandParts.join(' ');
 
         commandStringForLog = `ssh ... "${remoteCommand}" > ${filePath}`; // For logging purposes
-        this.logger.info(
-          `Prepared remote mongodump command for node-ssh:\n${remoteCommand.replace(/--password="[^"]+"/, '--password="***"')}\n(Output will be piped locally to ${path.basename(filePath)})`,
+        this.logger.updateSpinner(
+          `Prepared remote mongodump command for node-ssh:\n(Output will be piped locally to ${path.basename(filePath)})\n`,
         );
+        this.logger.snippet(remoteCommand);
 
         const sshConnectionOptions: Parameters<NodeSSH['connect']>[0] = {
           host: source.ssh.host,
@@ -262,10 +268,11 @@ export class BackupService {
         });
 
         try {
+          this.logger.updateSpinner('Establishing SSH connection...');
           await ssh.connect(sshConnectionOptions);
-          this.logger.info('SSH connection established.');
+          this.logger.succeedSpinner('SSH connection established.');
 
-          this.logger.info('Executing remote mongodump command via node-ssh (streaming with execCommand)...');
+          this.logger.updateSpinner('Executing remote mongodump command via node-ssh (streaming with execCommand)...');
 
           await new Promise<void>((resolve, reject) => {
             let stderrOutput = '';
@@ -286,7 +293,7 @@ export class BackupService {
                 },
               })
               .then((result: { stdout: string; stderr: string; code: number | null }) => {
-                this.logger.info('Remote command finished execution (execCommand).');
+                this.logger.succeedSpinner('Remote command finished execution (execCommand).');
                 commandExitCode = result.code;
                 stderrOutput = result.stderr;
                 if (stderrOutput) {
@@ -307,11 +314,11 @@ export class BackupService {
                     this.logger.error(errorMsg);
                     reject(new Error(errorMsg));
                   } else {
-                    this.logger.info('File stream finished writing successfully.');
+                    this.logger.succeedSpinner('File stream finished writing successfully.');
                     if (stderrOutput) {
-                      this.logger.warn('[${source.name}] node-ssh execution completed with stderr output (see above).');
+                      this.logger.warn(`[${source.name}] node-ssh execution completed with stderr output (see above).`);
                     } else {
-                      this.logger.info(`[${source.name}] node-ssh execution completed successfully.`);
+                      this.logger.succeedSpinner(`[${source.name}] node-ssh execution completed successfully.`);
                     }
                     resolve();
                   }
@@ -351,9 +358,8 @@ export class BackupService {
         directArgs.push(`--archive=${filePath}`);
 
         commandStringForLog = `${mongodumpPath} ${directArgs.map((arg) => (arg.includes(' ') || arg.includes("'") || arg.includes('"') ? `"${arg.replace(/"/g, '\\"')}"` : arg)).join(' ')}`;
-        this.logger.info(
-          `Executing local mongodump command:\n${commandStringForLog.replace(/--password=[^\s"]+/, '--password=***').replace(/--uri="[^"]+"/, '--uri="***"')}\n`,
-        );
+        this.logger.updateSpinner(`Executing local mongodump command:\n`);
+        this.logger.snippet(commandStringForLog);
 
         const dumpProcess = spawn(mongodumpPath, directArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
 
@@ -377,7 +383,7 @@ export class BackupService {
           this.logger.error(errorMsg);
           throw new Error(errorMsg);
         }
-        this.logger.info(`[${source.name}] Local mongodump process completed successfully.`);
+        this.logger.succeedSpinner(`[${source.name}] Local mongodump process completed successfully.`);
       }
 
       return filePath;
@@ -390,12 +396,14 @@ export class BackupService {
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
-          this.logger.info(`Cleaned up incomplete backup file: ${filePath}`);
+          this.logger.succeedSpinner(`Cleaned up incomplete backup file: ${filePath}`);
         } catch (cleanupError: any) {
-          this.logger.error(`Failed to cleanup incomplete backup file ${filePath}: ${cleanupError.message}`);
+          this.logger.failSpinner(`Failed to cleanup incomplete backup file ${filePath}: ${cleanupError.message}`);
         }
       }
       throw new Error(`Backup failed for ${source.name}.`);
+    } finally {
+      this.logger.stopSpinner();
     }
   }
 
