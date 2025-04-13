@@ -18,11 +18,12 @@ export class CLIModule {
   private config: AppConfig;
   private backupController: BackupController;
   private restoreController: RestoreController;
+  private logger: Logger;
 
   constructor(configPath: string) {
-    this.args = parseCommandLineArgs();
+    this.logger = new Logger({ prefix: CLIModule.name });
+    this.args = parseCommandLineArgs(this.logger);
     this.config = new Config(configPath, new Logger({ prefix: Config.name })).parsed;
-
     const backupService = new BackupService(this.config, new Logger({ prefix: BackupService.name }));
     const mongoService = new MongoDBService(new Logger({ prefix: MongoDBService.name }));
     const restoreService = new RestoreService(this.config, new Logger({ prefix: RestoreService.name }));
@@ -54,8 +55,8 @@ export class CLIModule {
         break;
       default:
         // If no mode specified in non-interactive, display help or error
-        console.error('Error: Operation mode (--backup or --restore) is required in non-interactive mode.');
-        console.log('Run with --interactive for guided prompts.');
+        this.logger.error('Error: Operation mode (--backup or --restore) is required in non-interactive mode.');
+        this.logger.info('Run with --interactive for guided prompts.');
         process.exit(1); // Exit with error code
     }
   }
@@ -72,7 +73,7 @@ export class CLIModule {
       if (!preset) {
         throw new Error(`Backup preset "${this.args.preset}" not found in configuration.`);
       }
-      console.log(`Using backup preset: ${preset.name}`);
+      this.logger.info(`Using backup preset: ${preset.name}`);
       await this.backupController.useBackupPreset(preset);
     } else if (this.args.source) {
       const backupMode = this.args.backupMode || 'all';
@@ -88,30 +89,32 @@ export class CLIModule {
 
         // --- VALIDATION for --since-time ---
         if (backupMode !== 'include') {
-          console.error('Error: --since-time can only be used with --backupMode=include.');
+          this.logger.error('Error: --since-time can only be used with --backupMode=include.');
           return; // Exit
         }
         if (collections.length !== 1) {
-          console.error('Error: --since-time requires exactly one collection specified via --collections.');
+          this.logger.error('Error: --since-time requires exactly one collection specified via --collections.');
           return; // Exit
         }
-        console.log(`Validated: --since-time will be applied to collection: ${collections[0]}`);
+        this.logger.info(`Validated: --since-time will be applied to collection: ${collections[0]}`);
         // --- End VALIDATION ---
       }
       // --- End Parse --since-time ---
 
       // Validate mode (basic check, specific validation for since-time done above)
       if (!['all', 'include', 'exclude'].includes(backupMode)) {
-        console.error(`Invalid backup mode: ${backupMode}. Must be 'all', 'include', or 'exclude'.`);
+        this.logger.error(`Invalid backup mode: ${backupMode}. Must be 'all', 'include', or 'exclude'.`);
         return;
       }
       // Validate collections for include/exclude modes (excluding the since-time case already handled)
       if (!startTime && (backupMode === 'include' || backupMode === 'exclude') && collections.length === 0) {
         if (backupMode === 'include') {
-          console.error('Mode "include" requires a list of collections via --collections.');
+          this.logger.error('Mode "include" requires a list of collections via --collections.');
           return;
         } else {
-          console.log('Info: Mode "exclude" with no collections specified; defaulting to backing up all collections.');
+          this.logger.info(
+            'Info: Mode "exclude" with no collections specified; defaulting to backing up all collections.',
+          );
         }
       }
 
@@ -124,10 +127,10 @@ export class CLIModule {
           startTime, // Pass potentially undefined startTime
         );
       } catch (error: any) {
-        console.error('\n✖ Backup command failed.');
+        this.logger.error('\n✖ Backup command failed.');
       }
     } else {
-      console.error('Error: No source specified for backup.');
+      this.logger.error('Error: No source specified for backup.');
       process.exit(1);
     }
   }
@@ -157,7 +160,7 @@ export class CLIModule {
     // Try parsing as ISO 8601 first
     let date = parseISO(sinceArg);
     if (isValid(date)) {
-      console.log(`Parsed --since-time as ISO date: ${date.toISOString()}`);
+      this.logger.info(`Parsed --since-time as ISO date: ${date.toISOString()}`);
       return date;
     }
 
@@ -181,18 +184,18 @@ export class CLIModule {
           date = subYears(now, value);
         }
         if (isValid(date)) {
-          console.log(`Parsed --since-time as ${value}${unit} ago: ${date.toISOString()}`);
+          this.logger.info(`Parsed --since-time as ${value}${unit} ago: ${date.toISOString()}`);
           return date;
         } else {
           throw new Error('Resulting date is invalid');
         }
       } catch (e) {
-        console.error(`Error calculating relative date for ${sinceArg}: ${e}`);
+        this.logger.error(`Error calculating relative date for ${sinceArg}: ${e}`);
         return undefined;
       }
     }
 
-    console.error(
+    this.logger.error(
       `Error: Invalid format for --since-time argument: "${sinceArg}". Use ISO 8601 or relative duration (e.g., "1d", "3h", "2w", "1M").`,
     );
     return undefined; // Indicate parsing failure

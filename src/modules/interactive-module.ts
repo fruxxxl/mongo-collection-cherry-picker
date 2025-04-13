@@ -87,7 +87,7 @@ export class InteractiveModule {
             exit = true;
             break;
           default:
-            console.log('Invalid action selected.');
+            this.logger.error('Invalid action selected.');
         }
 
         if (!exit) {
@@ -97,7 +97,7 @@ export class InteractiveModule {
           }
         }
       } catch (error: any) {
-        console.error(`\n✖ Interactive mode error: ${error.message}`);
+        this.logger.error(`\n✖ Interactive mode error: ${error.message}`);
         exit = true; // Exit on error
       }
     }
@@ -111,7 +111,7 @@ export class InteractiveModule {
       // Run the restore using the collected information
       await this.restoreController.runRestore(backupFile, target.name, options);
     } catch (error: any) {
-      console.error(`\n✖ Restore failed: ${error.message}`);
+      this.logger.error(`\n✖ Restore failed: ${error.message}`);
       // Error is logged, no need to re-throw unless specific handling is needed here
     }
   }

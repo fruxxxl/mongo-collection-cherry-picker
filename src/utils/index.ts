@@ -1,5 +1,6 @@
 import type { CommandLineArgs } from '../types';
 import { URLSearchParams } from 'url';
+import { Logger } from './logger';
 
 /**
  * Parses command line arguments passed to the application.
@@ -8,7 +9,7 @@ import { URLSearchParams } from 'url';
  *
  * @returns An object conforming to the CommandLineArgs interface.
  */
-export function parseCommandLineArgs(): CommandLineArgs {
+export function parseCommandLineArgs(logger: Logger): CommandLineArgs {
   const args = process.argv.slice(2);
 
   let mode: 'backup' | 'restore' | undefined;
@@ -44,7 +45,7 @@ export function parseCommandLineArgs(): CommandLineArgs {
       if (['all', 'include', 'exclude'].includes(modeValue)) {
         backupMode = modeValue as 'all' | 'include' | 'exclude';
       } else {
-        console.warn(`Invalid --backupMode value: ${modeValue}. Using default.`);
+        logger.warn(`Invalid --backupMode value: ${modeValue}. Using default.`);
       }
       continue;
     }
@@ -94,7 +95,7 @@ export function parseCommandLineArgs(): CommandLineArgs {
     }
 
     if (arg.startsWith('--')) {
-      console.warn(`Warning: Unknown argument detected: ${arg}`);
+      logger.warn(`Warning: Unknown argument detected: ${arg}`);
     }
   }
 
@@ -109,15 +110,15 @@ export function parseCommandLineArgs(): CommandLineArgs {
 
   if (!finalInteractive) {
     if (mode === 'backup' && !source && !preset) {
-      console.error('Error: --source or --preset is required for backup mode in non-interactive run.');
+      logger.error('Error: --source or --preset is required for backup mode in non-interactive run.');
       process.exit(1);
     }
     if (mode === 'restore' && !target && !preset) {
-      console.error('Error: --target or --preset is required for restore mode in non-interactive run.');
+      logger.error('Error: --target or --preset is required for restore mode in non-interactive run.');
       process.exit(1);
     }
     if (mode === 'restore' && !backupFile && !preset) {
-      console.error('Error: --backupFile is required for restore mode when not using a preset.');
+      logger.error('Error: --backupFile is required for restore mode when not using a preset.');
       process.exit(1);
     }
   }

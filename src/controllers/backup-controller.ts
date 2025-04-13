@@ -161,7 +161,7 @@ export class BackupController {
 
     if (selectedPresetAction && selectedPresetAction.type === 'backup') {
       const preset = selectedPresetAction.preset as BackupPreset;
-      console.log(`\nUsing backup preset: ${preset.name}`);
+      this.logger.info(`\nUsing backup preset: ${preset.name}`);
       await this.useBackupPreset(preset);
     }
   }
@@ -192,14 +192,11 @@ export class BackupController {
       let actualExcluded: string[] = [];
       const collections = preset.collections || [];
 
-      // --- Determine mode, collections, and startTime ---
-      console.log('==check==', preset.queryStartTime, preset.selectionMode, collections.length);
-
       if (preset.queryStartTime && preset.selectionMode === 'include' && collections.length === 1) {
         // --- Time Filter Case ---
         startTime = parseISO(preset.queryStartTime);
         if (!isValid(startTime)) {
-          spinner.warn(
+          this.logger.warn(
             `Invalid queryStartTime format "${preset.queryStartTime}" in preset "${preset.name}". Ignoring time filter.`,
           );
           startTime = undefined;
@@ -208,7 +205,7 @@ export class BackupController {
           actualMode = 'include';
           actualSelected = collections;
           actualExcluded = [];
-          spinner.info(
+          this.logger.info(
             `Preset "${preset.name}" uses time filter for collection "${actualSelected[0]}" (>= ${startTime.toISOString()}).`,
           );
           // Skip the standard include->exclude conversion logic
@@ -226,39 +223,39 @@ export class BackupController {
           actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
 
           if (actualExcluded.length === 0 && allCollections.length > 0) {
-            spinner.info(
+            this.logger.info(
               `Preset "${preset.name}": All collections were specified for inclusion. Switching to 'all' mode.`,
             );
             actualMode = 'all';
           } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-            spinner.warn(
+            this.logger.warn(
               `Preset "${preset.name}": Included collections do not exist in the source. Backing up nothing.`,
             );
             // Or potentially switch to 'all' mode? For now, let it proceed (will likely backup nothing).
             actualMode = 'exclude'; // Technically excluding everything
           } else {
             actualMode = 'exclude';
-            spinner.info(
+            this.logger.info(
               `Preset "${preset.name}": Mode 'include' transformed to 'exclude' (${actualExcluded.length} collections).`,
             );
           }
         } else if (preset.selectionMode === 'exclude') {
           actualMode = 'exclude';
           actualExcluded = collections;
-          spinner.info(`Preset "${preset.name}": Mode 'exclude' (${actualExcluded.length} collections).`);
+          this.logger.info(`Preset "${preset.name}": Mode 'exclude' (${actualExcluded.length} collections).`);
         } else {
           actualMode = 'all';
           actualExcluded = [];
-          spinner.info(`Preset "${preset.name}": Mode 'all'.`);
+          this.logger.info(`Preset "${preset.name}": Mode 'all'.`);
         }
       }
       // --- End Determination ---
 
-      spinner.stop();
-      console.log('Creating backup with preset');
-      console.log('========================================\n');
-      console.log(preset);
-      console.log('========================================\n');
+      this.logger.stopSpinner();
+      this.logger.info('Creating backup with preset');
+      this.logger.info('========================================\n');
+      this.logger.info(preset);
+      this.logger.info('========================================\n');
       const backupFilename = await this.backupService.createBackup(
         source,
         actualSelected,
@@ -267,7 +264,7 @@ export class BackupController {
         startTime,
       );
 
-      spinner.start(`Saving metadata for preset backup ${backupFilename}...`);
+      this.logger.startSpinner(`Saving metadata for preset backup ${backupFilename}...`);
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
@@ -284,11 +281,11 @@ export class BackupController {
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-      spinner.succeed(
+      this.logger.succeedSpinner(
         `Preset backup "${preset.name}" created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`,
       );
     } catch (error: any) {
-      spinner.fail(`Backup from preset "${preset.name}" failed: ${error.message}`);
+      this.logger.failSpinner(`Backup from preset "${preset.name}" failed: ${error.message}`);
       throw error; // Re-throw for handling in mongodb-app.ts
     } finally {
       // Ensure connection is closed if it was opened
@@ -311,10 +308,10 @@ export class BackupController {
     collections: string[],
     startTime?: Date,
   ): Promise<void> {
-    const spinner = ora(`Starting backup from arguments for ${sourceName}...`).start();
+    this.logger.startSpinner(`Starting backup from arguments for ${sourceName}...`);
     const source = this.config.connections.find((conn) => conn.name === sourceName);
     if (!source) {
-      spinner.fail(`Source connection "${sourceName}" not found.`);
+      this.logger.failSpinner(`Source connection "${sourceName}" not found.`);
       throw new Error(`Source connection "${sourceName}" not found.`);
     }
 
@@ -329,40 +326,42 @@ export class BackupController {
         actualMode = 'include';
         actualSelected = collections; // The single collection
         actualExcluded = [];
-        spinner.text = `Preparing backup for single collection ${actualSelected[0]} with time filter...`;
+        this.logger.updateSpinner(`Preparing backup for single collection ${actualSelected[0]} with time filter...`);
       } else {
         // No time filter - determine mode based on input args
         if (backupMode === 'include') {
           // Transform 'include' intent to 'exclude' command
           if (collections.length === 0) {
-            console.warn('Warning: Include mode specified but no collections provided. Backing up all collections.');
+            this.logger.warn(
+              'Warning: Include mode specified but no collections provided. Backing up all collections.',
+            );
             actualMode = 'all';
           } else {
             try {
-              spinner.text = `Fetching collections from ${source.name} to calculate exclusions...`;
+              this.logger.updateSpinner(`Fetching collections from ${source.name} to calculate exclusions...`);
               await this.mongoService.connect(source);
               const allCollections = await this.mongoService.getCollections(source.database);
               await this.mongoService.close();
-              spinner.succeed(`Fetched ${allCollections.length} collections.`);
+              this.logger.succeedSpinner(`Fetched ${allCollections.length} collections.`);
 
               actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
 
               if (actualExcluded.length === 0 && allCollections.length > 0) {
-                console.log('Info: All collections were specified for inclusion. Switching to all mode.');
+                this.logger.info('Info: All collections were specified for inclusion. Switching to all mode.');
                 actualMode = 'all';
               } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-                console.warn(
+                this.logger.warn(
                   `Warning: None of the specified collections (${collections.join(', ')}) were found. Backing up all collections.`,
                 );
                 actualMode = 'all';
                 actualExcluded = [];
               } else {
-                console.log(`Info: Will exclude collections: ${actualExcluded.join(', ')}`);
+                this.logger.info(`Info: Will exclude collections: ${actualExcluded.join(', ')}`);
                 actualMode = 'exclude';
               }
             } catch (error: any) {
-              spinner.fail(`Failed to fetch all collections: ${error.message}`);
-              console.warn('Falling back to backing up all collections.');
+              this.logger.failSpinner(`Failed to fetch all collections: ${error.message}`);
+              this.logger.warn('Falling back to backing up all collections.');
               actualMode = 'all';
               actualExcluded = [];
             }
@@ -370,17 +369,17 @@ export class BackupController {
         } else if (backupMode === 'exclude') {
           actualMode = 'exclude';
           actualExcluded = collections; // Use directly provided exclusions
-          console.log(`Info: Excluding collections: ${actualExcluded.join(', ')}`);
+          this.logger.info(`Info: Excluding collections: ${actualExcluded.join(', ')}`);
         } else {
           // backupMode === 'all'
           actualMode = 'all';
           actualExcluded = [];
-          console.log('Info: Backing up all collections.');
+          this.logger.info('Info: Backing up all collections.');
         }
       }
       // --- End Parameter Determination ---
 
-      spinner.start(`Running backup process for ${source.name}...`);
+      this.logger.startSpinner(`Running backup process for ${source.name}...`);
       const backupFilename = await this.backupService.createBackup(
         source,
         actualSelected,
@@ -389,7 +388,7 @@ export class BackupController {
         startTime,
       );
 
-      spinner.text = `Saving metadata for ${backupFilename}...`;
+      this.logger.updateSpinner(`Saving metadata for ${backupFilename}...`);
       const now = new Date();
       const metadata: BackupMetadata = {
         source: source.name,
@@ -406,9 +405,9 @@ export class BackupController {
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-      spinner.succeed(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
+      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
     } catch (error: any) {
-      spinner.fail(`Backup from arguments failed: ${error.message}`);
+      this.logger.failSpinner(`Backup from arguments failed: ${error.message}`);
       throw error; // Re-throw error to be caught by the caller (mongodb-app.ts)
     } finally {
       // Ensure connection is closed even on error
@@ -416,8 +415,8 @@ export class BackupController {
         await this.mongoService.close();
       }
       // Ensure spinner is stopped
-      if (spinner.isSpinning) {
-        spinner.stop();
+      if (this.logger.spinner?.isSpinning) {
+        this.logger.stopSpinner();
       }
     }
   }
