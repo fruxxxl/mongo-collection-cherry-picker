@@ -1,23 +1,19 @@
 import inquirer from 'inquirer';
 import { PromptService } from '../services/prompt-service';
 import { BackupController } from './backup-controller';
-import { AppConfig, BackupPreset } from '../types/index';
 import { Logger } from '../utils/logger';
+import { UpdateableConfig } from '../utils/updateable-config';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
  */
 export class PresetController {
   constructor(
-    private readonly config: AppConfig,
-    private readonly updatedConfig: (updatedConfig: AppConfig) => void,
+    private readonly config: UpdateableConfig,
     private readonly backupController: BackupController,
     private readonly promptService: PromptService,
     private readonly logger: Logger,
-  ) {
-    // Initialize backup presets if they don't exist
-    this.config.backupPresets = this.config.backupPresets || [];
-  }
+  ) {}
 
   /**
    * Guides the user through creating a new backup preset interactively.
@@ -29,16 +25,15 @@ export class PresetController {
       const newPreset = await this.promptService.promptForPreset();
 
       // Check for duplicate name
-      if (this.config.backupPresets?.some((p) => p.name === newPreset.name)) {
+      if (this.config.parsed.backupPresets?.some((p) => p.name === newPreset.name)) {
         this.logger.warn(
           `Warning: A preset with the name "${newPreset.name}" already exists. Overwriting is not supported via creation. Please edit or delete the existing preset.`,
         );
         return;
       }
 
-      this.config.backupPresets = this.config.backupPresets || [];
-      this.config.backupPresets.push(newPreset);
-      this.updatedConfig(this.config);
+      this.config.parsed.backupPresets.push(newPreset);
+      this.config.update(this.config.parsed);
       this.logger.succeedSpinner(`Backup preset "${newPreset.name}" created successfully!`);
 
       // Ask if the user wants to run the new preset right away
@@ -81,13 +76,5 @@ export class PresetController {
     } catch (error: any) {
       this.logger.failSpinner(`Error managing presets: ${error.message}`);
     }
-  }
-
-  /**
-   * Retrieves all backup presets.
-   * @returns An array of backup presets.
-   */
-  getBackupPresets(): BackupPreset[] {
-    return this.config.backupPresets || [];
   }
 }

@@ -225,7 +225,7 @@ export class BackupService {
 
         commandStringForLog = `ssh ... "${remoteCommand}" > ${filePath}`; // For logging purposes
         this.logger.updateSpinner(
-          `Prepared remote mongodump command for node-ssh:\n(Output will be piped locally to ${path.basename(filePath)})\n`,
+          `Prepared remote mongodump command for node-ssh: (Output will be piped locally to ${path.basename(filePath)})`,
         );
         this.logger.snippet(remoteCommand);
 
@@ -358,7 +358,7 @@ export class BackupService {
         directArgs.push(`--archive=${filePath}`);
 
         commandStringForLog = `${mongodumpPath} ${directArgs.map((arg) => (arg.includes(' ') || arg.includes("'") || arg.includes('"') ? `"${arg.replace(/"/g, '\\"')}"` : arg)).join(' ')}`;
-        this.logger.updateSpinner(`Executing local mongodump command:\n`);
+        this.logger.updateSpinner(`Executing local mongodump command:`);
         this.logger.snippet(commandStringForLog);
 
         const dumpProcess = spawn(mongodumpPath, directArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });

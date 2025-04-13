@@ -1,4 +1,3 @@
-import ora from 'ora';
 import path from 'path'; // Needed for metadata path
 import fs from 'fs'; // Needed for saving metadata
 import { parseISO, isValid } from 'date-fns'; // Import parseISO and isValid
@@ -138,7 +137,7 @@ export class BackupController {
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
+      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename} | Metadata saved: ${metadataPath}`);
     } catch (error: any) {
       if (this.logger.spinner?.isSpinning) {
         this.logger.failSpinner(`Interactive backup failed: ${error.message}`);
@@ -161,7 +160,7 @@ export class BackupController {
 
     if (selectedPresetAction && selectedPresetAction.type === 'backup') {
       const preset = selectedPresetAction.preset as BackupPreset;
-      this.logger.info(`\nUsing backup preset: ${preset.name}`);
+      this.logger.info(`Using backup preset: ${preset.name}`);
       await this.useBackupPreset(preset);
     }
   }
@@ -171,7 +170,7 @@ export class BackupController {
    * @param preset - The backup preset configuration.
    */
   async useBackupPreset(preset: BackupPreset): Promise<void> {
-    const spinner = ora(`Loading preset "${preset.name}"...`).start();
+    this.logger.startSpinner(`Loading preset "${preset.name}"...`);
     let source: ConnectionConfig | undefined;
     let startTime: Date | undefined; // Variable to hold parsed start time
 
@@ -183,7 +182,7 @@ export class BackupController {
         );
       }
 
-      spinner.text = `Preparing backup for preset "${preset.name}" (Source: ${source.name})...`;
+      this.logger.updateSpinner(`Preparing backup for preset "${preset.name}" (Source: ${source.name})...`);
 
       // Initialize actualMode to satisfy the compiler.
       // The subsequent logic will assign the correct value based on conditions.
@@ -231,7 +230,6 @@ export class BackupController {
             this.logger.warn(
               `Preset "${preset.name}": Included collections do not exist in the source. Backing up nothing.`,
             );
-            // Or potentially switch to 'all' mode? For now, let it proceed (will likely backup nothing).
             actualMode = 'exclude'; // Technically excluding everything
           } else {
             actualMode = 'exclude';
@@ -253,9 +251,7 @@ export class BackupController {
 
       this.logger.stopSpinner();
       this.logger.info('Creating backup with preset');
-      this.logger.info('========================================\n');
       this.logger.info(preset);
-      this.logger.info('========================================\n');
       const backupFilename = await this.backupService.createBackup(
         source,
         actualSelected,
@@ -282,7 +278,7 @@ export class BackupController {
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
       this.logger.succeedSpinner(
-        `Preset backup "${preset.name}" created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`,
+        `Preset backup "${preset.name}" created successfully: ${backupFilename} | Metadata saved: ${metadataPath}`,
       );
     } catch (error: any) {
       this.logger.failSpinner(`Backup from preset "${preset.name}" failed: ${error.message}`);
@@ -338,7 +334,7 @@ export class BackupController {
             actualMode = 'all';
           } else {
             try {
-              this.logger.updateSpinner(`Fetching collections from ${source.name} to calculate exclusions...`);
+              this.logger.updateSpinner(`Fetching collections from ${source.name} to calculate exclusions...\n`);
               await this.mongoService.connect(source);
               const allCollections = await this.mongoService.getCollections(source.database);
               await this.mongoService.close();
@@ -405,7 +401,7 @@ export class BackupController {
       const metadataPath = `${backupFilename}.json`;
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename}\nMetadata saved: ${metadataPath}`);
+      this.logger.succeedSpinner(`Backup created successfully: ${backupFilename} | Metadata saved: ${metadataPath}`);
     } catch (error: any) {
       this.logger.failSpinner(`Backup from arguments failed: ${error.message}`);
       throw error; // Re-throw error to be caught by the caller (mongodb-app.ts)

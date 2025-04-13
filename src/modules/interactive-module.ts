@@ -9,10 +9,10 @@ import { RestoreService } from '../services/restore.service';
 import { AppConfig } from '../types';
 
 import { Logger } from '../utils/logger';
+import { UpdateableConfig } from '../utils/updateable-config';
 
 export class InteractiveModule {
   private appConfigParsed: AppConfig;
-  private updatedConfig: (updatedConfig: AppConfig) => void;
 
   private promptService: PromptService;
   private backupController: BackupController;
@@ -23,14 +23,13 @@ export class InteractiveModule {
   constructor(configPath: string) {
     const config = new Config(configPath, new Logger({ prefix: Config.name }));
     this.appConfigParsed = config.parsed;
-    this.updatedConfig = config.update;
+    const updateableConfig = new UpdateableConfig(config, new Logger({ prefix: UpdateableConfig.name }));
     const backupService = new BackupService(this.appConfigParsed, new Logger({ prefix: BackupService.name }));
     const mongoService = new MongoDBService(new Logger({ prefix: MongoDBService.name }));
     const restoreService = new RestoreService(this.appConfigParsed, new Logger({ prefix: RestoreService.name }));
 
     this.promptService = new PromptService(
-      this.appConfigParsed,
-      this.updatedConfig,
+      updateableConfig,
       backupService,
       mongoService,
       new Logger({ prefix: PromptService.name }),
@@ -53,8 +52,7 @@ export class InteractiveModule {
     );
 
     this.presetController = new PresetController(
-      this.appConfigParsed,
-      this.updatedConfig,
+      updateableConfig,
       this.backupController,
       this.promptService,
       new Logger({ prefix: PresetController.name }),
@@ -97,7 +95,7 @@ export class InteractiveModule {
           }
         }
       } catch (error: any) {
-        this.logger.error(`\n✖ Interactive mode error: ${error.message}`);
+        this.logger.error(`✖ Interactive mode error: ${error.message}`);
         exit = true; // Exit on error
       }
     }
@@ -111,7 +109,7 @@ export class InteractiveModule {
       // Run the restore using the collected information
       await this.restoreController.runRestore(backupFile, target.name, options);
     } catch (error: any) {
-      this.logger.error(`\n✖ Restore failed: ${error.message}`);
+      this.logger.error(`✖ Restore failed: ${error.message}`);
       // Error is logged, no need to re-throw unless specific handling is needed here
     }
   }

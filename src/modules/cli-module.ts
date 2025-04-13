@@ -127,7 +127,7 @@ export class CLIModule {
           startTime, // Pass potentially undefined startTime
         );
       } catch (error: any) {
-        this.logger.error('\n✖ Backup command failed.');
+        this.logger.error('✖ Backup command failed.');
       }
     } else {
       this.logger.error('Error: No source specified for backup.');

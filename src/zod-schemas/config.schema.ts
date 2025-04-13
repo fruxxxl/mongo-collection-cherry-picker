@@ -37,5 +37,5 @@ export const AppConfigSchema = z.object({
   connections: z.array(ConnectionConfigSchema),
   mongodumpPath: z.string().optional().default('mongodump'),
   mongorestorePath: z.string().optional().default('mongorestore'),
-  backupPresets: z.array(BackupPresetSchema).optional(),
+  backupPresets: z.array(BackupPresetSchema).optional().default([]),
 });

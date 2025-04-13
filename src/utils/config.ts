@@ -6,30 +6,17 @@ import * as path from 'path';
 
 export class Config {
   private _parsed: AppConfig;
-  private _configPath: string;
 
   constructor(
-    configPath: string,
-    private logger: Logger,
+    public readonly configPath: string,
+    protected readonly logger: Logger,
   ) {
     this._parsed = this.load(configPath);
-    this._configPath = configPath;
+    this._parsed.backupPresets = this._parsed.backupPresets || [];
   }
 
   get parsed(): AppConfig {
     return this._parsed;
-  }
-
-  update(updatedConfig: AppConfig): void {
-    try {
-      const absolutePath = path.resolve(this._configPath);
-      const configString = JSON.stringify(updatedConfig, null, 4);
-      fs.writeFileSync(absolutePath, configString, 'utf8');
-      this.logger.info(`Configuration presets saved successfully to: ${absolutePath}`);
-    } catch (error: any) {
-      this.logger.error(`Error saving presets to configuration file "${this._configPath}": ${error.message}`);
-      throw error;
-    }
   }
 
   load(configPath: string): AppConfig {

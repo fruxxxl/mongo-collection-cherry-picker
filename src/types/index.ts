@@ -53,7 +53,7 @@ export interface AppConfig {
   mongodumpPath: string;
   mongorestorePath: string;
   connections: ConnectionConfig[];
-  backupPresets?: BackupPreset[];
+  backupPresets: BackupPreset[];
 }
 
 /**

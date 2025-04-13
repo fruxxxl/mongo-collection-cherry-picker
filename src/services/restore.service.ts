@@ -40,7 +40,7 @@ export class RestoreService {
       throw new Error(`Backup archive file not found: ${archivePath}`);
     }
 
-    this.logger.info(`\nStarting restore from: ${archivePath}`);
+    this.logger.info(`Starting restore from: ${archivePath}`);
     this.logger.info(`Target connection: ${target.name} (Database: ${target.database})`);
     if (options.drop) {
       this.logger.info('Option --drop enabled: Existing collections in the target database will be dropped.');
@@ -218,7 +218,7 @@ export class RestoreService {
       }
       // --- End Execute mongorestore ---
     } catch (error: any) {
-      this.logger.error(`\n✖ Error during restore: ${error.message}`);
+      this.logger.error(`✖ Error during restore: ${error.message}`);
       throw error;
     }
   }
@@ -258,6 +258,6 @@ export class RestoreService {
     this.logger.info(`Documents restored: ${totalRestored}`);
     if (totalFailed > 0) this.logger.warn(`Documents failed:   ${totalFailed}`);
     else this.logger.info(`Documents failed:   ${totalFailed}`);
-    this.logger.info('---------------------\n');
+    this.logger.info('---------------------');
   }
 }

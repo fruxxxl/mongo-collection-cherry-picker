@@ -1,17 +1,17 @@
 import inquirer from 'inquirer';
-import type { ConnectionConfig, BackupMetadata, BackupPreset, AppConfig } from '../types';
+import type { ConnectionConfig, BackupMetadata, BackupPreset } from '../types';
 import { BackupService } from './backup.service';
 import { MongoDBService } from './mongodb.service';
 import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, formatISO, format } from 'date-fns';
 import { Logger } from '../utils/logger';
+import { UpdateableConfig } from '../utils/updateable-config';
 
 /**
  * Provides services for interacting with the user via command-line prompts (inquirer).
  */
 export class PromptService {
   constructor(
-    private readonly config: AppConfig,
-    private readonly updatedConfig: (updatedConfig: AppConfig) => void,
+    private readonly config: UpdateableConfig,
     private readonly backupService: BackupService,
     private readonly mongoService: MongoDBService,
     private readonly logger: Logger,
@@ -60,7 +60,7 @@ export class PromptService {
     selectionMode: 'all' | 'include' | 'exclude';
     startTime?: Date;
   }> {
-    if (!this.config.connections || this.config.connections.length === 0) {
+    if (!this.config.parsed.connections || this.config.parsed.connections.length === 0) {
       throw new Error('No connections found in the configuration.');
     }
 
@@ -69,10 +69,10 @@ export class PromptService {
         type: 'list',
         name: 'sourceName',
         message: 'Select source connection for backup:',
-        choices: this.config.connections.map((conn) => conn.name),
+        choices: this.config.parsed.connections.map((conn) => conn.name),
       },
     ]);
-    const source = this.config.connections.find((conn) => conn.name === sourceName);
+    const source = this.config.parsed.connections.find((conn) => conn.name === sourceName);
 
     if (!source) {
       throw new Error(`Source connection "${sourceName}" not found in the configuration.`);
@@ -99,7 +99,7 @@ export class PromptService {
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
       let collections: string[] = [];
-      this.logger.startSpinner(`Fetching collections from ${source.name}...`);
+      this.logger.startSpinner(`Fetching collections from ${source.name}...\n`);
       try {
         await this.mongoService.connect(source);
         collections = await this.mongoService.getCollections(source.database);
@@ -263,7 +263,7 @@ export class PromptService {
     let backupMetadata: BackupMetadata;
     try {
       backupMetadata = this.backupService.loadBackupMetadata(backupFile);
-      this.logger.info('\n--- Selected Backup Metadata ---');
+      this.logger.info('--- Selected Backup Metadata ---');
       this.logger.info(`Source Connection: ${backupMetadata.source}`);
       this.logger.info(`Database:          ${backupMetadata.database || 'N/A (Older Backup?)'}`);
       this.logger.info(`Created At:        ${new Date(backupMetadata.timestamp).toLocaleString()}`);
@@ -281,7 +281,7 @@ export class PromptService {
       ) {
         this.logger.info(`Excluded Collections: ${backupMetadata.excludedCollections.join(', ')}`);
       }
-      this.logger.info('------------------------------\n');
+      this.logger.info('------------------------------');
     } catch (error: any) {
       this.logger.error(`Error loading metadata for ${backupFile}: ${error.message}`);
       throw new Error(`Failed to load metadata for selected backup: ${error.message}`);
@@ -291,7 +291,7 @@ export class PromptService {
       type: 'list',
       name: 'target',
       message: 'Select target connection for restore:',
-      choices: this.config.connections.map((conn) => ({
+      choices: this.config.parsed.connections.map((conn) => ({
         name: `${conn.name} (${conn.database})`,
         value: conn,
       })),
@@ -316,8 +316,8 @@ export class PromptService {
     excludeSource?: ConnectionConfig,
   ): Promise<{ target: ConnectionConfig; options: { drop: boolean } }> {
     const availableConnections = excludeSource
-      ? this.config.connections.filter((conn) => conn.name !== excludeSource.name)
-      : this.config.connections;
+      ? this.config.parsed.connections.filter((conn) => conn.name !== excludeSource.name)
+      : this.config.parsed.connections;
 
     if (availableConnections.length === 0) {
       throw new Error('No available target connections found (excluding the source).');
@@ -369,7 +369,7 @@ export class PromptService {
         validate: (input: string) => {
           const trimmedInput = input.trim();
           if (!trimmedInput) return 'Preset name cannot be empty.';
-          if (this.config.backupPresets?.some((p) => p.name === trimmedInput)) {
+          if (this.config.parsed.backupPresets?.some((p) => p.name === trimmedInput)) {
             return 'A backup preset with this name already exists.';
           }
           return true;
@@ -386,13 +386,13 @@ export class PromptService {
       type: 'list',
       name: 'sourceIndex',
       message: 'Select source connection for this preset:',
-      choices: this.config.connections.map((conn, index) => ({
+      choices: this.config.parsed.connections.map((conn, index) => ({
         name: `${conn.name} (${conn.database})`,
         value: index,
       })),
     });
 
-    const source = this.config.connections[sourceIndex];
+    const source = this.config.parsed.connections[sourceIndex];
 
     const { selectionMode } = await inquirer.prompt({
       type: 'list',
@@ -462,7 +462,7 @@ export class PromptService {
         `Excluded Collections: ${collections.length > 0 ? collections.join(', ') : '(None - all collections will be backed up)'}`,
       );
     }
-    this.logger.info('----------------------------------\n');
+    this.logger.info('----------------------------------');
 
     return {
       name: name.trim(),
@@ -475,7 +475,7 @@ export class PromptService {
   }
 
   async managePresets(): Promise<{ type: 'backup'; preset: BackupPreset } | undefined> {
-    const backupPresets = this.config.backupPresets || [];
+    const backupPresets = this.config.parsed.backupPresets || [];
 
     if (backupPresets.length === 0) {
       this.logger.info('No saved presets found. Please create a preset first.');
@@ -522,7 +522,7 @@ export class PromptService {
       case 'view':
         this.logger.info('--- Preset Details ---');
         this.logger.info(JSON.stringify(selected.preset, null, 2));
-        this.logger.info('----------------------\n');
+        this.logger.info('----------------------');
         return undefined;
       case 'delete':
         const { confirmDelete } = await inquirer.prompt({
@@ -534,11 +534,13 @@ export class PromptService {
 
         if (confirmDelete) {
           if (selected.type === 'backup') {
-            this.config.backupPresets = this.config.backupPresets?.filter((p) => p.name !== selected.preset.name);
+            this.config.parsed.backupPresets = this.config.parsed.backupPresets?.filter(
+              (p) => p.name !== selected.preset.name,
+            );
           }
 
           try {
-            this.updatedConfig(this.config);
+            this.config.update(this.config.parsed);
             this.logger.info(`Preset "${selected.preset.name}" deleted successfully.`);
           } catch (saveError: any) {
             this.logger.error(`Error saving configuration after deleting preset: ${saveError.message}`);
@@ -560,7 +562,7 @@ export class PromptService {
    * @returns A promise that resolves with the new or updated preset configuration.
    */
   async promptForPreset(existingPreset?: BackupPreset): Promise<BackupPreset> {
-    this.logger.info(existingPreset ? '--- Editing Backup Preset ---' : '\n--- Creating New Backup Preset ---');
+    this.logger.info(existingPreset ? '--- Editing Backup Preset ---' : '--- Creating New Backup Preset ---');
 
     const nameAnswer = await inquirer.prompt<{ name: string }>([
       {
@@ -573,7 +575,10 @@ export class PromptService {
     ]);
     const name = nameAnswer.name.trim();
 
-    const sourceChoices = this.config.connections.map((c) => ({ name: `${c.name} (${c.database})`, value: c }));
+    const sourceChoices = this.config.parsed.connections.map((c) => ({
+      name: `${c.name} (${c.database})`,
+      value: c,
+    }));
     const sourceAnswer = await inquirer.prompt<{ source: ConnectionConfig }>([
       {
         type: 'list',
@@ -600,7 +605,7 @@ export class PromptService {
     let queryStartTime: string | undefined = existingPreset?.queryStartTime;
 
     if (selectionMode === 'include' || selectionMode === 'exclude') {
-      this.logger.startSpinner(`Fetching collections from ${source.name}...`);
+      this.logger.startSpinner(`Fetching collections from ${source.name}...\n`);
       try {
         await this.mongoService.connect(source);
         const allCollections = await this.mongoService.getCollections(source.database);
@@ -625,7 +630,7 @@ export class PromptService {
 
         if (selectionMode === 'include') {
           if (collections.length === 1) {
-            this.logger.info('\n--- Time Filter (Optional) ---');
+            this.logger.info('--- Time Filter (Optional) ---');
             this.logger.info('Applies only when using this preset.');
             const applyTimeFilterAnswer = await inquirer.prompt<{ apply: boolean }>([
               {
@@ -683,7 +688,7 @@ export class PromptService {
       }
     }
 
-    this.logger.info('\n--- Preset Configuration Summary ---');
+    this.logger.info('--- Preset Configuration Summary ---');
     this.logger.info(`Name: ${name}`);
     this.logger.info(`Source: ${source.name} (${source.database})`);
     this.logger.info(`Mode: ${selectionMode}`);

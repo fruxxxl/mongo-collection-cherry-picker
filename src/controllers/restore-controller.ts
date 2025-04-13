@@ -1,4 +1,3 @@
-import ora from 'ora';
 import path from 'path';
 import inquirer from 'inquirer';
 import fs from 'fs';
@@ -56,7 +55,7 @@ export class RestoreController {
         if (backupMetadata.excludedCollections?.length) {
           this.logger.logRaw(`Excluded: ${backupMetadata.excludedCollections.join(', ')}`);
         }
-        this.logger.logRaw('-----------------------\n');
+        this.logger.logRaw('--------------------------------');
       } catch (error: any) {
         throw new Error(`Failed to load metadata for backup "${backupFilename}": ${error.message}`);
       }
@@ -81,7 +80,7 @@ export class RestoreController {
       if (this.logger.spinner?.isSpinning) {
         this.logger.failSpinner(`Restore operation failed: ${error.message}`);
       } else {
-        this.logger.error(`\n✖ Restore operation failed: ${error.message}`);
+        this.logger.error(`✖ Restore operation failed: ${error.message}`);
       }
       if (this.logger.spinner?.isSpinning) {
         this.logger.stopSpinner();
@@ -147,8 +146,8 @@ export class RestoreController {
       commandArgs.push('--drop');
     }
 
-    this.logger.info('\nCommand to be executed:');
-    this.logger.info(`mongorestore ${commandArgs.join(' ')}\n`);
+    this.logger.info('Command to be executed:');
+    this.logger.info(`mongorestore ${commandArgs.join(' ')}`);
 
     const { confirm } = await inquirer.prompt({
       type: 'confirm',
