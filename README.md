@@ -203,31 +203,12 @@ mongo-collection-cherry-picker/
 ├── backups/                  # Default backup storage directory
 ├── src/
 │   ├── apps/                 # Entry points for different application modes (CLI, Interactive)
-│   │   ├── cli.ts            # Entry point for CLI mode
-│   │   └── interactive.ts    # Entry point for interactive mode
 │   ├── controllers/          # Handles user input and orchestrates actions for different modes
-│   │   ├── backup-controller.ts # Logic for backup operations
-│   │   ├── preset-controller.ts # Logic for managing presets
-│   │   └── restore-controller.ts# Logic for restore operations
 │   ├── modules/              # NestJS modules organizing features for different modes
-│   │   ├── cli-module.ts     # Module definition for CLI mode
-│   │   └── interactive-module.ts # Module definition for interactive mode
 │   ├── services/             # Core business logic and external interactions
-│   │   ├── backup.service.ts   # Handles mongodump execution and metadata
-│   │   ├── mongodb.service.ts  # Manages MongoDB connections and SSH tunnels
-│   │   ├── prompt-service.ts   # Provides interactive prompts using inquirer
-│   │   └── restore.service.ts  # Handles mongorestore execution
 │   ├── types/                # TypeScript type definitions and interfaces
-│   │   ├── index.ts          # Main type definitions
-│   │   └── yargs.d.ts        # Type definitions for yargs arguments
 │   ├── utils/                # Utility functions and helpers
-│   │   ├── config.ts         # Configuration loading and validation logic
-│   │   ├── formatter.ts      # Backup filename formatting
-│   │   ├── index.ts          # General utility functions (e.g., file operations)
-│   │   └── logger.ts         # Logging utility (e.g., Winston)
 │   ├── zod-schemas/          # Zod schemas for data validation
-│   │   └── config.schema.ts  # Zod schema for validating `config.json`
-│   └── .DS_Store             # macOS system file (can be ignored)
 ├── config.json               # Default configuration file
 ├── README.md                 # This file
 └── package.json              # Project dependencies and scripts
