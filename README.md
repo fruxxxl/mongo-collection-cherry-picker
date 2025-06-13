@@ -200,18 +200,28 @@ This metadata aids the restore process (especially for database name mapping) an
 
 ```
 mongo-collection-cherry-picker/
-├── backups/                  # Default backup storage directory
+├── backups/                        # Default backup storage directory
 ├── src/
-│   ├── apps/                 # Entry points for different application modes (CLI, Interactive)
-│   ├── controllers/          # Handles user input and orchestrates actions for different modes
-│   ├── modules/              # NestJS modules organizing features for different modes
-│   ├── services/             # Core business logic and external interactions
-│   ├── types/                # TypeScript type definitions and interfaces
-│   ├── utils/                # Utility functions and helpers
-│   ├── zod-schemas/          # Zod schemas for data validation
-├── config.json               # Default configuration file
-├── README.md                 # This file
-└── package.json              # Project dependencies and scripts
+│   ├── entrypoint/                 # Application entry points (CLI, Interactive)
+│   │   ├── cli.ts
+│   │   ├── interactive.ts
+│   │   └── modes/                  # CLI and interactive mode orchestration
+│   ├── modules/
+│   │   └── backup/
+│   │       ├── domain/             # Business logic (e.g., mongodump command generation)
+│   │       ├── interfaces/         # Strategy interfaces, argument contracts, etc.
+│   │       ├── services/           # Application services and infrastructure services (e.g., ssh-backup-runner)
+│   │       └── strategies/         # Strategy implementations (local, ssh) and strategy selector
+│   │   └── restore/                # Similar structure for restore logic
+│   │   └── prompt/                 # Interactive CLI prompts and preset management logic
+│   ├── infrastructure/             # Infrastructure services (logger, mongodb, config)
+│   ├── controllers/                # Controllers for CLI/interactive mode (scenario orchestration)
+│   ├── types/                      # TypeScript types and interfaces (AppConfig, ConnectionConfig, etc.)
+│   ├── utils/                      # Utilities, formatting, parsing, etc.
+│   ├── zod-schemas/                # Zod schemas for config validation
+├── config.json                     # Main application config
+├── README.md                       # This file
+└── package.json                    # Dependencies and scripts
 ```
 
 ## 🤝 Contributing
