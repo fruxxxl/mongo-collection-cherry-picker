@@ -1,6 +1,6 @@
-import path from 'path'; // Needed for metadata path
-import fs from 'fs'; // Needed for saving metadata
-import { parseISO, isValid } from 'date-fns'; // Import parseISO and isValid
+import path from 'path';
+import fs from 'fs';
+import { parseISO, isValid } from 'date-fns';
 
 import { MongoDBService } from '../services/mongodb.service';
 import { BackupService } from '../services/backup.service';
@@ -47,69 +47,15 @@ export class BackupController {
         );
       }
 
-      let actualMode: 'all' | 'include' | 'exclude';
-      let actualSelected: string[] = [];
-      let actualExcluded: string[] = [];
+      const { actualMode, actualSelected, actualExcluded } = await this.getActualBackupParams(
+        intendedMode,
+        intendedIncluded,
+        intendedExcluded,
+        startTime,
+        source,
+        'interactive',
+      );
       const collectionsListForMetadata = intendedIncluded.length > 0 ? intendedIncluded : intendedExcluded;
-
-      if (startTime) {
-        actualMode = 'include';
-        actualSelected = intendedIncluded;
-        actualExcluded = [];
-        this.logger.updateSpinner(`Running backup for single collection ${actualSelected[0]} with time filter...`);
-      } else {
-        this.logger.updateSpinner(`Calculating collections for ${source.name}...`);
-        if (intendedMode === 'include') {
-          if (intendedIncluded.length === 0) {
-            this.logger.warn(
-              'Include mode selected but no collections were chosen or fetched. Backing up all collections.',
-            );
-            actualMode = 'all';
-          } else {
-            try {
-              await this.mongoService.connect(source);
-              const allCollections = await this.mongoService.getCollections(source.database);
-              await this.mongoService.close();
-
-              actualExcluded = allCollections.filter((coll) => !intendedIncluded.includes(coll));
-
-              if (actualExcluded.length === 0 && allCollections.length > 0) {
-                this.logger.info(
-                  `All collections in ${source.database} were specified for inclusion. Switching to 'all' mode.`,
-                );
-                actualMode = 'all';
-                actualSelected = [];
-              } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-                this.logger.warn(
-                  `None of the specified collections (${intendedIncluded.join(', ')}) were found. Backing up all collections (excluding none).`,
-                );
-                actualMode = 'all';
-                actualExcluded = [];
-              } else {
-                this.logger.info(`Will exclude collections: ${actualExcluded.join(', ')}`);
-                actualMode = 'exclude';
-                actualSelected = [];
-              }
-            } catch (error: any) {
-              this.logger.failSpinner(`Failed to fetch all collections to calculate exclusions: ${error.message}`);
-              this.logger.warn('Falling back to backing up all collections.');
-              actualMode = 'all';
-              actualSelected = [];
-              actualExcluded = [];
-            }
-          }
-        } else if (intendedMode === 'exclude') {
-          actualMode = 'exclude';
-          actualExcluded = intendedExcluded;
-          actualSelected = [];
-          this.logger.info(`Excluding collections: ${actualExcluded.join(', ')}`);
-        } else {
-          actualMode = 'all';
-          actualSelected = [];
-          actualExcluded = [];
-          this.logger.info('Backing up all collections.');
-        }
-      }
 
       this.logger.stopSpinner();
       const backupFilename = await this.backupService.createBackup(
@@ -184,70 +130,31 @@ export class BackupController {
 
       this.logger.updateSpinner(`Preparing backup for preset "${preset.name}" (Source: ${source.name})...`);
 
-      // Initialize actualMode to satisfy the compiler.
-      // The subsequent logic will assign the correct value based on conditions.
       let actualMode: 'all' | 'include' | 'exclude' = 'all';
       let actualSelected: string[] = [];
       let actualExcluded: string[] = [];
       const collections = preset.collections || [];
+      let collectionsListForMetadata = collections;
 
       if (preset.queryStartTime && preset.selectionMode === 'include' && collections.length === 1) {
-        // --- Time Filter Case ---
         startTime = parseISO(preset.queryStartTime);
         if (!isValid(startTime)) {
           this.logger.warn(
             `Invalid queryStartTime format "${preset.queryStartTime}" in preset "${preset.name}". Ignoring time filter.`,
           );
           startTime = undefined;
-          // Fallback logic will run below in the `if (!startTime)` block
-        } else {
-          actualMode = 'include';
-          actualSelected = collections;
-          actualExcluded = [];
-          this.logger.info(
-            `Preset "${preset.name}" uses time filter for collection "${actualSelected[0]}" (>= ${startTime.toISOString()}).`,
-          );
-          // Skip the standard include->exclude conversion logic
         }
       }
 
-      // --- Standard Mode Determination (if no valid time filter) ---
-      if (!startTime) {
-        // Only run if startTime was not successfully set above
-        if (preset.selectionMode === 'include') {
-          await this.mongoService.connect(source);
-          const allCollections = await this.mongoService.getCollections(source.database);
-          await this.mongoService.close(); // Close connection after listing
-
-          actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
-
-          if (actualExcluded.length === 0 && allCollections.length > 0) {
-            this.logger.info(
-              `Preset "${preset.name}": All collections were specified for inclusion. Switching to 'all' mode.`,
-            );
-            actualMode = 'all';
-          } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-            this.logger.warn(
-              `Preset "${preset.name}": Included collections do not exist in the source. Backing up nothing.`,
-            );
-            actualMode = 'exclude'; // Technically excluding everything
-          } else {
-            actualMode = 'exclude';
-            this.logger.info(
-              `Preset "${preset.name}": Mode 'include' transformed to 'exclude' (${actualExcluded.length} collections).`,
-            );
-          }
-        } else if (preset.selectionMode === 'exclude') {
-          actualMode = 'exclude';
-          actualExcluded = collections;
-          this.logger.info(`Preset "${preset.name}": Mode 'exclude' (${actualExcluded.length} collections).`);
-        } else {
-          actualMode = 'all';
-          actualExcluded = [];
-          this.logger.info(`Preset "${preset.name}": Mode 'all'.`);
-        }
-      }
-      // --- End Determination ---
+      ({ actualMode, actualSelected, actualExcluded } = await this.getActualBackupParams(
+        preset.selectionMode,
+        collections,
+        collections,
+        startTime,
+        source,
+        `preset:${preset.name}`,
+      ));
+      collectionsListForMetadata = collections;
 
       this.logger.stopSpinner();
       this.logger.info('Creating backup with preset');
@@ -266,8 +173,8 @@ export class BackupController {
         source: source.name,
         database: source.database,
         selectionMode: preset.selectionMode,
-        includedCollections: preset.selectionMode === 'include' ? collections : undefined,
-        excludedCollections: preset.selectionMode === 'exclude' ? collections : undefined,
+        includedCollections: preset.selectionMode === 'include' ? collectionsListForMetadata : undefined,
+        excludedCollections: preset.selectionMode === 'exclude' ? collectionsListForMetadata : undefined,
         timestamp: now.getTime(),
         date: now.toISOString(),
         archivePath: path.basename(backupFilename),
@@ -312,68 +219,14 @@ export class BackupController {
     }
 
     try {
-      let actualMode: 'all' | 'include' | 'exclude';
-      let actualSelected: string[] = [];
-      let actualExcluded: string[] = [];
-
-      // --- Determine actual parameters for mongodump ---
-      if (startTime) {
-        // Validation already done in MongoDBApp
-        actualMode = 'include';
-        actualSelected = collections; // The single collection
-        actualExcluded = [];
-        this.logger.updateSpinner(`Preparing backup for single collection ${actualSelected[0]} with time filter...`);
-      } else {
-        // No time filter - determine mode based on input args
-        if (backupMode === 'include') {
-          // Transform 'include' intent to 'exclude' command
-          if (collections.length === 0) {
-            this.logger.warn(
-              'Warning: Include mode specified but no collections provided. Backing up all collections.',
-            );
-            actualMode = 'all';
-          } else {
-            try {
-              this.logger.updateSpinner(`Fetching collections from ${source.name} to calculate exclusions...\n`);
-              await this.mongoService.connect(source);
-              const allCollections = await this.mongoService.getCollections(source.database);
-              await this.mongoService.close();
-              this.logger.succeedSpinner(`Fetched ${allCollections.length} collections.`);
-
-              actualExcluded = allCollections.filter((coll) => !collections.includes(coll));
-
-              if (actualExcluded.length === 0 && allCollections.length > 0) {
-                this.logger.info('Info: All collections were specified for inclusion. Switching to all mode.');
-                actualMode = 'all';
-              } else if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
-                this.logger.warn(
-                  `Warning: None of the specified collections (${collections.join(', ')}) were found. Backing up all collections.`,
-                );
-                actualMode = 'all';
-                actualExcluded = [];
-              } else {
-                this.logger.info(`Info: Will exclude collections: ${actualExcluded.join(', ')}`);
-                actualMode = 'exclude';
-              }
-            } catch (error: any) {
-              this.logger.failSpinner(`Failed to fetch all collections: ${error.message}`);
-              this.logger.warn('Falling back to backing up all collections.');
-              actualMode = 'all';
-              actualExcluded = [];
-            }
-          }
-        } else if (backupMode === 'exclude') {
-          actualMode = 'exclude';
-          actualExcluded = collections; // Use directly provided exclusions
-          this.logger.info(`Info: Excluding collections: ${actualExcluded.join(', ')}`);
-        } else {
-          // backupMode === 'all'
-          actualMode = 'all';
-          actualExcluded = [];
-          this.logger.info('Info: Backing up all collections.');
-        }
-      }
-      // --- End Parameter Determination ---
+      const { actualMode, actualSelected, actualExcluded } = await this.getActualBackupParams(
+        backupMode,
+        collections,
+        collections,
+        startTime,
+        source,
+        'args',
+      );
 
       this.logger.startSpinner(`Running backup process for ${source.name}...`);
       const backupFilename = await this.backupService.createBackup(
@@ -415,5 +268,103 @@ export class BackupController {
         this.logger.stopSpinner();
       }
     }
+  }
+
+  /**
+   * Helper to determine the effective backup parameters (mode, included/excluded collections)
+   * based on user intent, time filter, and available collections.
+   * Reduces complexity by using early returns and clear branches.
+   */
+  private async getActualBackupParams(
+    mode: 'all' | 'include' | 'exclude',
+    included: string[],
+    excluded: string[],
+    startTime: Date | undefined,
+    source: ConnectionConfig,
+    contextLabel: string,
+  ): Promise<{ actualMode: 'all' | 'include' | 'exclude'; actualSelected: string[]; actualExcluded: string[] }> {
+    // Time filter always means include mode for a single collection
+    if (startTime) {
+      this.logger.updateSpinner(
+        `[${contextLabel}] Backup single collection with time filter: ${included[0]} (>= ${startTime.toISOString()})...`,
+      );
+      return {
+        actualMode: 'include',
+        actualSelected: included,
+        actualExcluded: [],
+      };
+    }
+
+    this.logger.updateSpinner(`[${contextLabel}] Calculating collection set...`);
+
+    // INCLUDE mode logic
+    if (mode === 'include') {
+      if (included.length === 0) {
+        this.logger.warn(
+          `[${contextLabel}] Include mode selected but no collections specified. Backing up all collections.`,
+        );
+        return {
+          actualMode: 'all',
+          actualSelected: [],
+          actualExcluded: [],
+        };
+      }
+      try {
+        await this.mongoService.connect(source);
+        const allCollections = await this.mongoService.getCollections(source.database);
+        await this.mongoService.close();
+        const actualExcluded = allCollections.filter((coll) => !included.includes(coll));
+        if (actualExcluded.length === 0 && allCollections.length > 0) {
+          this.logger.info(`[${contextLabel}] All collections in DB specified for inclusion. Switching to 'all' mode.`);
+          return {
+            actualMode: 'all',
+            actualSelected: [],
+            actualExcluded: [],
+          };
+        }
+        if (actualExcluded.length === allCollections.length && allCollections.length > 0) {
+          this.logger.warn(
+            `[${contextLabel}] None of the specified collections (${included.join(', ')}) found. Backing up all collections.`,
+          );
+          return {
+            actualMode: 'all',
+            actualSelected: [],
+            actualExcluded: [],
+          };
+        }
+        this.logger.info(`[${contextLabel}] Will exclude collections: ${actualExcluded.join(', ')}`);
+        return {
+          actualMode: 'exclude',
+          actualSelected: [],
+          actualExcluded,
+        };
+      } catch (error: any) {
+        this.logger.failSpinner(`[${contextLabel}] Failed to fetch collection list: ${error.message}`);
+        this.logger.warn(`[${contextLabel}] Fallback to backing up all collections.`);
+        return {
+          actualMode: 'all',
+          actualSelected: [],
+          actualExcluded: [],
+        };
+      }
+    }
+
+    // EXCLUDE mode logic
+    if (mode === 'exclude') {
+      this.logger.info(`[${contextLabel}] Excluding collections: ${excluded.join(', ')}`);
+      return {
+        actualMode: 'exclude',
+        actualSelected: [],
+        actualExcluded: excluded,
+      };
+    }
+
+    // ALL mode logic (default)
+    this.logger.info(`[${contextLabel}] Backing up all collections.`);
+    return {
+      actualMode: 'all',
+      actualSelected: [],
+      actualExcluded: [],
+    };
   }
 }
