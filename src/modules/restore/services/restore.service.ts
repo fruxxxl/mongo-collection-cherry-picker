@@ -1,10 +1,11 @@
-import type { AppConfig, BackupMetadata, ConnectionConfig, RestoreOptions } from '../../../types/types';
+import type { AppConfig, BackupMetadata, ConnectionConfig } from '@ts-types/mixed';
+import type { RestoreOptions } from '../interfaces/restore-options.interface';
 
 import * as fs from 'fs';
 import * as path from 'path';
 
 import { spawn } from 'child_process';
-import { Logger } from '../../../infrastructure/logger';
+import { Logger } from '@infrastructure/logger';
 
 /**
  * Handles the restoration of MongoDB backups using mongorestore.

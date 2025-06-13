@@ -1,8 +1,8 @@
 /* eslint-disable quotes */
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AppConfig, BackupMetadata, ConnectionConfig } from '../../../types/types';
-import { Logger } from '../../../infrastructure/logger';
+import type { AppConfig, BackupMetadata, ConnectionConfig } from '@ts-types/mixed';
+import { Logger } from '@infrastructure/logger';
 
 import { SshBackupRunner } from './ssh-backup-runner';
 

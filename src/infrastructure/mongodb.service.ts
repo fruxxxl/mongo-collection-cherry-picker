@@ -1,13 +1,14 @@
 import { MongoClient, Db, ListCollectionsCursor } from 'mongodb';
-import { ConnectionConfig, SSHConfig } from '../types/types';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-import { Logger } from './logger'; // Keep Logger import
-import { createTunnel } from 'tunnel-ssh'; // Ensure createTunnel is imported
-import type { Server } from 'net'; // Keep Server type from net for the tunnel instance
-import { parseMongoUri } from '../utils/parse-mongo-uri';
+import { Logger } from '@infrastructure/logger';
+import { createTunnel } from 'tunnel-ssh';
+import type { Server } from 'net';
+import { parseMongoUri } from '@utils/parse-mongo-uri';
+import { ConnectionConfig, SSHConfig } from '@ts-types/mixed';
 
 /**
  * Provides services for connecting to MongoDB instances,

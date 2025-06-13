@@ -2,12 +2,13 @@ import path from 'path';
 import fs from 'fs';
 import { parseISO, isValid } from 'date-fns';
 
-import { MongoDBService } from '../../../infrastructure/mongodb.service';
-import { BackupService } from '../services/backup.service';
+import { MongoDBService } from '@infrastructure/mongodb.service';
 
-import { PromptService } from '../../prompt/services/prompt-service';
-import { AppConfig, BackupPreset, BackupMetadata, ConnectionConfig } from '../../../types/types';
-import { Logger } from '../../../infrastructure/logger';
+import { PromptService } from '@modules/prompt/services/prompt-service';
+
+import { Logger } from '@infrastructure/logger';
+import { AppConfig, BackupMetadata, BackupPreset, ConnectionConfig } from '@ts-types/mixed';
+import { BackupService } from '../services/backup.service';
 
 /**
  * Manages the backup process, coordinating user prompts, backup service, and metadata generation.

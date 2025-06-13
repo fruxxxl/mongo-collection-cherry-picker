@@ -1,16 +1,16 @@
-import { BackupController } from '../../modules/backup/controllers/backup-controller';
-import { PresetController } from '../../modules/prompt/controllers/preset-controller';
-import { RestoreController } from '../../modules/restore/controllers/restore-controller';
-import { BackupService } from '../../modules/backup/services/backup.service';
-import { Config } from '../../infrastructure/config';
-import { MongoDBService } from '../../infrastructure/mongodb.service';
-import { PromptService } from '../../modules/prompt/services/prompt-service';
+import { BackupController } from '@modules/backup/controllers/backup-controller';
+import { PresetController } from '@modules/prompt/controllers/preset-controller';
+import { RestoreController } from '@modules/restore/controllers/restore-controller';
+import { BackupService } from '@modules/backup/services/backup.service';
+import { Config } from '@config/config';
+import { MongoDBService } from '@infrastructure/mongodb.service';
+import { PromptService } from '@modules/prompt/services/prompt-service';
 
-import { AppConfig } from '../../types/types';
+import { AppConfig } from '@ts-types/mixed';
 
-import { Logger } from '../../infrastructure/logger';
-import { UpdateableConfig } from '../../infrastructure/updateable-config';
-import { RestoreService } from '../../modules/restore/services/restore.service';
+import { Logger } from '@infrastructure/logger';
+import { UpdateableConfig } from '@config/updateable-config';
+import { RestoreService } from '@modules/restore/services/restore.service';
 
 export class InteractiveMode {
   private appConfigParsed: AppConfig;

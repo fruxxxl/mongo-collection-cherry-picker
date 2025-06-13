@@ -1,10 +1,11 @@
 import inquirer from 'inquirer';
-import type { ConnectionConfig, BackupMetadata, BackupPreset } from '../../../types/types';
-import { BackupService } from '../../backup/services/backup.service';
-import { MongoDBService } from '../../../infrastructure/mongodb.service';
+import type { ConnectionConfig, BackupMetadata, BackupPreset } from '@ts-types/mixed';
+
 import { subDays, parseISO, isValid, subHours, subWeeks, subMonths, formatISO, format } from 'date-fns';
-import { Logger } from '../../../infrastructure/logger';
-import { UpdateableConfig } from '../../../infrastructure/updateable-config';
+import { Logger } from '@infrastructure/logger';
+import { UpdateableConfig } from '@config/updateable-config';
+import { BackupService } from '@modules/backup/services/backup.service';
+import { MongoDBService } from '@infrastructure/mongodb.service';
 
 /**
  * Provides services for interacting with the user via command-line prompts (inquirer).

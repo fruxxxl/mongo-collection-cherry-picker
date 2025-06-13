@@ -1,17 +1,40 @@
-import { CommandLineArgs } from '../../types/types';
-import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } from 'date-fns'; // Import date-fns
+import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } from 'date-fns';
 
-import { AppConfig } from '../../types/types';
+import { AppConfig } from '@ts-types/mixed';
 
-import { BackupController } from '../../modules/backup/controllers/backup-controller';
-import { RestoreController } from '../../modules/restore/controllers/restore-controller';
-import { BackupService } from '../../modules/backup/services/backup.service';
-import { Logger } from '../../infrastructure/logger';
+import { BackupController } from '@modules/backup/controllers/backup-controller';
+import { RestoreController } from '@modules/restore/controllers/restore-controller';
+import { BackupService } from '@modules/backup/services/backup.service';
+import { Logger } from '@infrastructure/logger';
 
-import { MongoDBService } from '../../infrastructure/mongodb.service';
-import { PromptService } from '../../modules/prompt/services/prompt-service';
-import { Config } from '../../infrastructure/config';
-import { RestoreService } from '../../modules/restore/services/restore.service';
+import { MongoDBService } from '@infrastructure/mongodb.service';
+import { PromptService } from '@modules/prompt/services/prompt-service';
+
+import { RestoreService } from '@modules/restore/services/restore.service';
+import { Config } from '@config/config';
+
+export interface CommandLineArgs {
+  /** Flag indicating if the application should run in interactive mode. */
+  interactive?: boolean;
+  /** The primary operation mode ('backup' or 'restore'), usually undefined in interactive mode. */
+  mode?: 'backup' | 'restore';
+  /** Name of the source connection (for backup). */
+  source?: string;
+  /** Backup mode ('all', 'include', 'exclude'). */
+  backupMode?: 'all' | 'include' | 'exclude';
+  /** List of collections for include/exclude mode. */
+  collections?: string[];
+  /** Name of the backup or restore preset to use. */
+  preset?: string;
+  /** Specific backup file to restore. */
+  backupFile?: string;
+  /** Name of the target connection (for restore). */
+  target?: string;
+  /** Flag to drop target collections before restoring. */
+  drop?: boolean;
+  /** Filter backup by _id timestamp (ISO 8601 or relative like "1d", "7d", "3h"). */
+  sinceTime?: string;
+}
 
 export class CLIMode {
   private args: CommandLineArgs;

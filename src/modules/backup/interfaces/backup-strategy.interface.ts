@@ -1,4 +1,4 @@
-import { ConnectionConfig } from '../../../types/types';
+import { ConnectionConfig } from '@ts-types/mixed';
 import { BackupArgs } from './backup-args.interface';
 
 export interface BackupStrategy {

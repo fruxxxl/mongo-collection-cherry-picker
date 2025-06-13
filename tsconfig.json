@@ -8,7 +8,25 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "resolveJsonModule": true
+        "resolveJsonModule": true,
+        "paths": {
+            "@modules/*": [
+                "modules/*"
+            ],
+            "@infrastructure/*": [
+                "infrastructure/*"
+            ],
+            "@ts-types/*": [
+                "types/*"
+            ],
+            "@utils/*": [
+                "utils/*"
+            ],
+            "@config/*": [
+                "config/*"
+            ]
+        },
+        "baseUrl": "./src"
     },
     "include": [
         "src/**/*"

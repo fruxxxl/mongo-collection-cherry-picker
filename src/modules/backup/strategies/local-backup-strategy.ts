@@ -1,23 +1,23 @@
 import { spawn } from 'child_process';
 
-import type { AppConfig, ConnectionConfig } from '../../../types/types';
+import type { AppConfig, ConnectionConfig } from '@ts-types/mixed';
 import type { BackupArgs } from '../interfaces/backup-args.interface';
 import { BackupStrategy } from '../interfaces/backup-strategy.interface';
-import { BackupCommand } from '../domain/backup-command';
-import { Logger } from '../../../infrastructure/logger';
+import { Dump } from '../domain/dump';
+import { Logger } from '@infrastructure/logger';
 
 export class LocalBackupStrategy implements BackupStrategy {
-  private readonly backupCommand: BackupCommand;
+  private readonly backupCommand: Dump;
 
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
   ) {
-    this.backupCommand = new BackupCommand(this.config, this.logger);
+    this.backupCommand = new Dump(this.config, this.logger);
   }
 
   async createBackup(source: ConnectionConfig, args: BackupArgs): Promise<string> {
-    const { baseArgs } = this.backupCommand.buildMongodumpArgs(source, args);
+    const { baseArgs } = this.backupCommand.buildArgs(source, args);
     const filePath = this.backupCommand.buildBackupFilePath(source);
 
     baseArgs.push(`--archive=${filePath}`);
@@ -62,13 +62,13 @@ export class LocalBackupStrategy implements BackupStrategy {
           const error = new Error(
             `mongodump process exited with code ${code}. stderr: ${stderrData}\nstdout: ${stdoutData}`,
           );
-          this.backupCommand.handleBackupError(error, source, filePath, `mongodump ${baseArgs.join(' ')}`);
+          this.backupCommand.handleError(error, source, filePath, `mongodump ${baseArgs.join(' ')}`);
         }
       });
 
       mongodumpProcess.on('error', (error) => {
         try {
-          this.backupCommand.handleBackupError(error, source, filePath, `mongodump ${baseArgs.join(' ')}`);
+          this.backupCommand.handleError(error, source, filePath, `mongodump ${baseArgs.join(' ')}`);
         } catch (error) {
           reject(error);
         }

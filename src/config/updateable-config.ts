@@ -1,5 +1,5 @@
-import { AppConfig } from '../types/types';
-import { Logger } from './logger';
+import { AppConfig } from '@ts-types/mixed';
+import { Logger } from '@infrastructure/logger';
 
 import * as fs from 'fs';
 import * as path from 'path';

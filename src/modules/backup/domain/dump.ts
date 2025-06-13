@@ -1,19 +1,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AppConfig, ConnectionConfig } from '../../../types/types';
-import type { BackupArgs } from '../interfaces/backup-args.interface';
-import { formattedTimestamp } from '../../../utils/formatted-timestamp';
-import { objectIdFromTimestamp } from '../../../utils/object-id-from-timestamp';
-import { formatFilename } from '../../../utils/format-filename';
-import { Logger } from '../../../infrastructure/logger';
+import type { AppConfig, ConnectionConfig } from '@ts-types/mixed';
 
-export class BackupCommand {
+import { formattedTimestamp } from '@utils/formatted-timestamp';
+import { objectIdFromTimestamp } from '@utils/object-id-from-timestamp';
+import { formatFilename } from '@utils/format-filename';
+import { Logger } from '@infrastructure/logger';
+import { BackupArgs } from '../interfaces/backup-args.interface';
+
+export class Dump {
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
   ) {}
 
-  buildMongodumpArgs(source: ConnectionConfig, args: BackupArgs): { baseArgs: string[]; queryValue?: string } {
+  buildArgs(source: ConnectionConfig, args: BackupArgs): { baseArgs: string[]; queryValue?: string } {
     const baseArgs: string[] = [];
     const { selectedCollections, excludedCollections, mode, startTime } = args;
     let queryValue: string | undefined = undefined;
@@ -156,7 +157,7 @@ export class BackupCommand {
     return path.join(backupDir, filename);
   }
 
-  handleBackupError(error: Error, source: ConnectionConfig, filePath: string, commandStringForLog?: string): never {
+  handleError(error: Error, source: ConnectionConfig, filePath: string, commandStringForLog?: string): never {
     const errorMsg = `Error creating backup for ${source.name}: ${error.message}`;
     this.logger.error(errorMsg);
     if (commandStringForLog) {

@@ -1,4 +1,4 @@
-import { ConnectionConfig } from '../../../types/types';
+import { ConnectionConfig } from '@ts-types/mixed';
 import { LocalBackupStrategy } from './local-backup-strategy';
 import { SshBackupStrategy } from './ssh-backup-strategy';
 

@@ -1,6 +1,6 @@
-import { AppConfig } from '../types/types';
-import { Logger } from './logger';
-import { AppConfigSchema } from '../zod-schemas/config.schema';
+import { AppConfig } from '@ts-types/mixed';
+import { Logger } from '@infrastructure/logger';
+import { AppConfigSchema } from './zod-schemas/config.schema';
 import * as fs from 'fs';
 import * as path from 'path';
 
