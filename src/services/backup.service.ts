@@ -19,9 +19,8 @@ export class BackupService {
     private readonly config: AppConfig,
     private readonly logger: Logger,
   ) {
-    const sshService = new SshService(logger);
     this.localStrategy = new LocalBackupStrategy(config, logger);
-    this.sshStrategy = new SshBackupStrategy(config, logger, sshService);
+    this.sshStrategy = new SshBackupStrategy(config, logger, new SshService(logger));
   }
 
   /**

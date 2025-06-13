@@ -17,11 +17,19 @@ export class LocalBackupStrategy implements BackupStrategy {
   }
 
   async createBackup(source: ConnectionConfig, args: BackupArgs): Promise<string> {
-    const { baseArgs, queryValue } = this.backupCommand.buildMongodumpArgs(source, args);
+    const { baseArgs } = this.backupCommand.buildMongodumpArgs(source, args);
     const filePath = this.backupCommand.buildBackupFilePath(source);
     this.backupCommand.ensureBackupDir();
 
     baseArgs.push(`--archive=${filePath}`);
+
+    // Log the final mongodump command
+    const commandString = `mongodump ${baseArgs.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}`;
+    this.logger.info(`[${source.name}] Running mongodump command: 
+      -------------------
+      ${commandString}
+      -------------------
+      `);
 
     // Start the mongodump process with the given arguments.
     // stdio: ['pipe', 'pipe', 'pipe'] means:
@@ -32,10 +40,7 @@ export class LocalBackupStrategy implements BackupStrategy {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    if (queryValue) {
-      mongodumpProcess.stdin.write(queryValue);
-      mongodumpProcess.stdin.end();
-    }
+    // No need to write to stdin anymore, query is always passed as argument
 
     return new Promise<string>((resolve, reject) => {
       let stdoutData = '';

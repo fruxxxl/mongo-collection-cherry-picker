@@ -7,11 +7,7 @@ import type { SSHConfig } from '../../types';
 import { Logger } from '../../utils/logger';
 
 export class SshService {
-  private logger?: Logger;
-
-  constructor(logger?: Logger) {
-    this.logger = logger;
-  }
+  constructor(private readonly logger: Logger) {}
 
   /**
    * Executes a command over SSH and streams the output to a file.
@@ -89,6 +85,14 @@ export class SshService {
       }
 
       const remoteCommand = remoteCommandParts.join(' ');
+      // Log the final mongodump command
+
+      this.logger.info(`Running mongodump command: 
+      -------------------
+      ${remoteCommand}
+      -------------------
+      `);
+
       let stderr = '';
 
       if (!outputPath) {

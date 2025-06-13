@@ -13,8 +13,8 @@ export class BackupCommand {
 
   buildMongodumpArgs(source: ConnectionConfig, args: BackupArgs): { baseArgs: string[]; queryValue?: string } {
     const baseArgs: string[] = [];
-    let queryValue: string | undefined = undefined;
     const { selectedCollections, excludedCollections, mode, startTime } = args;
+    let queryValue: string | undefined = undefined;
 
     // --- Connection Arguments ---
     if (source.ssh) {
@@ -110,6 +110,9 @@ export class BackupCommand {
       try {
         const startObjectId = objectIdFromTimestamp(startTime);
         queryValue = JSON.stringify({ _id: { $gte: { $oid: startObjectId } } });
+        if (!source.ssh) {
+          baseArgs.push('--query', queryValue);
+        }
         this.logger.info(
           `Applying time filter to collection "${collectionName}": including documents with _id >= ${startObjectId} (time >= ${startTime.toISOString()})`,
         );
@@ -132,7 +135,7 @@ export class BackupCommand {
       baseArgs.push('--forceTableScan');
     }
 
-    return { baseArgs, queryValue };
+    return queryValue ? { baseArgs, queryValue } : { baseArgs };
   }
 
   buildBackupFilePath(source: ConnectionConfig): string {
