@@ -1,26 +1,29 @@
 /* eslint-disable quotes */
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AppConfig, BackupMetadata, ConnectionConfig } from '../types';
-import { Logger } from '../utils/logger';
-import { LocalBackupStrategy } from './backup/local-backup-strategy';
-import { SshBackupStrategy } from './backup/ssh-backup-strategy';
-import { SshService } from './backup/ssh-service';
+import type { AppConfig, BackupMetadata, ConnectionConfig } from '../../../types/types';
+import { Logger } from '../../../infrastructure/logger';
+
+import { SshBackupRunner } from './ssh-backup-runner';
+
+import { BackupStrategySelector } from '../strategies/backup-strategy-selector';
+import { LocalBackupStrategy } from '../strategies/local-backup-strategy';
+import { SshBackupStrategy } from '../strategies/ssh-backup-strategy';
 
 /**
  * Handles the execution of mongodump command for creating MongoDB backups.
  * Supports both direct database connections and connections via SSH tunnel.
  */
 export class BackupService {
-  private readonly localStrategy: LocalBackupStrategy;
-  private readonly sshStrategy: SshBackupStrategy;
+  private readonly strategySelector: BackupStrategySelector;
 
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
   ) {
-    this.localStrategy = new LocalBackupStrategy(config, logger);
-    this.sshStrategy = new SshBackupStrategy(config, logger, new SshService(logger));
+    const localStrategy = new LocalBackupStrategy(config, logger);
+    const sshStrategy = new SshBackupStrategy(config, logger, new SshBackupRunner(logger));
+    this.strategySelector = new BackupStrategySelector(localStrategy, sshStrategy);
   }
 
   /**
@@ -44,7 +47,7 @@ export class BackupService {
     startTime?: Date,
   ): Promise<string> {
     const args = { selectedCollections, excludedCollections, mode, startTime };
-    const strategy = source.ssh ? this.sshStrategy : this.localStrategy;
+    const strategy = this.strategySelector.select(source);
     return strategy.createBackup(source, args);
   }
 

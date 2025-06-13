@@ -1,4 +1,4 @@
-import { AppConfig } from '../types';
+import { AppConfig } from '../types/types';
 import { Logger } from './logger';
 import { AppConfigSchema } from '../zod-schemas/config.schema';
 import * as fs from 'fs';

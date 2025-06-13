@@ -1,11 +1,5 @@
-import type { ConnectionConfig } from '../../types';
-
-export interface BackupArgs {
-  selectedCollections: string[];
-  excludedCollections: string[];
-  mode: 'all' | 'include' | 'exclude';
-  startTime?: Date;
-}
+import { ConnectionConfig } from '../../../types/types';
+import { BackupArgs } from './backup-args.interface';
 
 export interface BackupStrategy {
   /**

@@ -1,8 +1,8 @@
 import inquirer from 'inquirer';
 import { PromptService } from '../services/prompt-service';
-import { BackupController } from './backup-controller';
-import { Logger } from '../utils/logger';
-import { UpdateableConfig } from '../utils/updateable-config';
+import { BackupController } from '../../backup/controllers/backup-controller';
+import { Logger } from '../../../infrastructure/logger';
+import { UpdateableConfig } from '../../../infrastructure/updateable-config';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.

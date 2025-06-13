@@ -1,19 +1,19 @@
-import { CommandLineArgs } from '../types';
+import { CommandLineArgs } from '../../types/types';
 import { parseISO, subDays, subHours, isValid, subWeeks, subMonths, subYears } from 'date-fns'; // Import date-fns
 
-import { AppConfig } from '../types';
+import { AppConfig } from '../../types/types';
 
-import { parseCommandLineArgs } from '../utils';
-import { BackupController } from '../controllers/backup-controller';
-import { RestoreController } from '../controllers/restore-controller';
-import { BackupService } from '../services/backup.service';
-import { Logger } from '../utils/logger';
-import { RestoreService } from '../services/restore.service';
-import { MongoDBService } from '../services/mongodb.service';
-import { PromptService } from '../services/prompt-service';
-import { Config } from '../utils/config';
+import { BackupController } from '../../modules/backup/controllers/backup-controller';
+import { RestoreController } from '../../modules/restore/controllers/restore-controller';
+import { BackupService } from '../../modules/backup/services/backup.service';
+import { Logger } from '../../infrastructure/logger';
 
-export class CLIModule {
+import { MongoDBService } from '../../infrastructure/mongodb.service';
+import { PromptService } from '../../modules/prompt/services/prompt-service';
+import { Config } from '../../infrastructure/config';
+import { RestoreService } from '../../modules/restore/services/restore.service';
+
+export class CLIMode {
   private args: CommandLineArgs;
   private config: AppConfig;
   private backupController: BackupController;
@@ -21,8 +21,8 @@ export class CLIModule {
   private logger: Logger;
 
   constructor(configPath: string) {
-    this.logger = new Logger({ prefix: CLIModule.name });
-    this.args = parseCommandLineArgs(this.logger);
+    this.logger = new Logger({ prefix: CLIMode.name });
+    this.args = this.parseCommandLineArgs();
     this.config = new Config(configPath, new Logger({ prefix: Config.name })).parsed;
     const backupService = new BackupService(this.config, new Logger({ prefix: BackupService.name }));
     const mongoService = new MongoDBService(new Logger({ prefix: MongoDBService.name }));
@@ -199,5 +199,133 @@ export class CLIModule {
       `Error: Invalid format for --since-time argument: "${sinceArg}". Use ISO 8601 or relative duration (e.g., "1d", "3h", "2w", "1M").`,
     );
     return undefined; // Indicate parsing failure
+  }
+
+  private parseCommandLineArgs(): CommandLineArgs {
+    const args = process.argv.slice(2);
+
+    let mode: 'backup' | 'restore' | undefined;
+    let source: string | undefined;
+    let backupMode: 'all' | 'include' | 'exclude' | undefined;
+    let collections: string[] | undefined;
+    let preset: string | undefined;
+    let backupFile: string | undefined;
+    let target: string | undefined;
+    let drop: boolean = false;
+    let interactive: boolean | undefined = undefined;
+    let sinceTime: string | undefined;
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+
+      if (arg === '--backup' || arg === '--mode=backup') {
+        mode = 'backup';
+        continue;
+      }
+      if (arg === '--restore' || arg === '--mode=restore') {
+        mode = 'restore';
+        continue;
+      }
+
+      if (arg.startsWith('--source=')) {
+        source = arg.split('=')[1];
+        continue;
+      }
+
+      if (arg.startsWith('--backupMode=')) {
+        const modeValue = arg.split('=')[1];
+        if (['all', 'include', 'exclude'].includes(modeValue)) {
+          backupMode = modeValue as 'all' | 'include' | 'exclude';
+        } else {
+          this.logger.warn(`Invalid --backupMode value: ${modeValue}. Using default.`);
+        }
+        continue;
+      }
+
+      if (arg.startsWith('--collections=')) {
+        collections = arg
+          .split('=')[1]
+          .split(',')
+          .map((c) => c.trim())
+          .filter((c) => c);
+        continue;
+      }
+
+      if (arg.startsWith('--preset=')) {
+        preset = arg.split('=')[1];
+        continue;
+      }
+
+      if (arg.startsWith('--file=') || arg.startsWith('--backupFile=')) {
+        backupFile = arg.split('=')[1];
+        continue;
+      }
+
+      if (arg.startsWith('--target=')) {
+        target = arg.split('=')[1];
+        continue;
+      }
+
+      if (arg === '--drop') {
+        drop = true;
+        continue;
+      }
+
+      if (arg === '--interactive' || arg === 'interactive') {
+        interactive = true;
+        continue;
+      }
+
+      if (arg.startsWith('--since-time=')) {
+        sinceTime = arg.split('=')[1];
+        continue;
+      }
+      if (arg === '--since-time' && i + 1 < args.length) {
+        sinceTime = args[i + 1];
+        i++;
+        continue;
+      }
+
+      if (arg.startsWith('--')) {
+        this.logger.warn(`Warning: Unknown argument detected: ${arg}`);
+      }
+    }
+
+    let finalInteractive: boolean;
+    if (interactive === true) {
+      finalInteractive = true;
+    } else if (interactive === false) {
+      finalInteractive = false;
+    } else {
+      finalInteractive = !(mode || preset);
+    }
+
+    if (!finalInteractive) {
+      if (mode === 'backup' && !source && !preset) {
+        this.logger.error('Error: --source or --preset is required for backup mode in non-interactive run.');
+        process.exit(1);
+      }
+      if (mode === 'restore' && !target && !preset) {
+        this.logger.error('Error: --target or --preset is required for restore mode in non-interactive run.');
+        process.exit(1);
+      }
+      if (mode === 'restore' && !backupFile && !preset) {
+        this.logger.error('Error: --backupFile is required for restore mode when not using a preset.');
+        process.exit(1);
+      }
+    }
+
+    return {
+      mode: finalInteractive ? undefined : mode,
+      interactive: finalInteractive,
+      source,
+      backupMode,
+      collections,
+      preset,
+      backupFile,
+      target,
+      drop,
+      sinceTime,
+    };
   }
 }

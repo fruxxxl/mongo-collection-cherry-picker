@@ -1,10 +1,10 @@
 import { spawn } from 'child_process';
 
-import type { AppConfig, ConnectionConfig } from '../../types';
-
-import { Logger } from '../../utils/logger';
-import type { BackupStrategy, BackupArgs } from './backup-strategy';
-import { BackupCommand } from './backup-command';
+import type { AppConfig, ConnectionConfig } from '../../../types/types';
+import type { BackupArgs } from '../interfaces/backup-args.interface';
+import { BackupStrategy } from '../interfaces/backup-strategy.interface';
+import { BackupCommand } from '../domain/backup-command';
+import { Logger } from '../../../infrastructure/logger';
 
 export class LocalBackupStrategy implements BackupStrategy {
   private readonly backupCommand: BackupCommand;
@@ -19,7 +19,6 @@ export class LocalBackupStrategy implements BackupStrategy {
   async createBackup(source: ConnectionConfig, args: BackupArgs): Promise<string> {
     const { baseArgs } = this.backupCommand.buildMongodumpArgs(source, args);
     const filePath = this.backupCommand.buildBackupFilePath(source);
-    this.backupCommand.ensureBackupDir();
 
     baseArgs.push(`--archive=${filePath}`);
 

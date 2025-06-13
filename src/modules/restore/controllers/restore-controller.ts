@@ -1,11 +1,12 @@
 import path from 'path';
 import inquirer from 'inquirer';
 import fs from 'fs';
-import { BackupService } from '../services/backup.service';
+import { BackupService } from '../../backup/services/backup.service';
+
+import type { PromptService } from '../../prompt/services/prompt-service';
+import type { AppConfig, RestorePreset, ConnectionConfig, BackupMetadata } from '../../../types/types';
+import { Logger } from '../../../infrastructure/logger';
 import { RestoreService } from '../services/restore.service';
-import type { PromptService } from '../services/prompt-service';
-import type { AppConfig, RestorePreset, ConnectionConfig, BackupMetadata } from '../types/index';
-import { Logger } from '../utils/logger';
 
 /**
  * Manages the restore process, coordinating user prompts (if needed) and the RestoreService.

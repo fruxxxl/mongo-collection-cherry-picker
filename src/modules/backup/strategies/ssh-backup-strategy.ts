@@ -1,9 +1,10 @@
 import * as fs from 'fs';
-import type { AppConfig, ConnectionConfig } from '../../types';
-import { Logger } from '../../utils/logger';
-import type { BackupStrategy, BackupArgs } from './backup-strategy';
-import { SshService } from './ssh-service';
-import { BackupCommand } from './backup-command';
+import type { AppConfig, ConnectionConfig } from '../../../types/types';
+import type { BackupArgs } from '../interfaces/backup-args.interface';
+import { BackupStrategy } from '../interfaces/backup-strategy.interface';
+import { BackupCommand } from '../domain/backup-command';
+import { Logger } from '../../../infrastructure/logger';
+import { SshBackupRunner } from '../services/ssh-backup-runner';
 
 export class SshBackupStrategy implements BackupStrategy {
   private readonly backupCommand: BackupCommand;
@@ -11,7 +12,7 @@ export class SshBackupStrategy implements BackupStrategy {
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
-    private readonly sshService: SshService,
+    private readonly sshService: SshBackupRunner,
   ) {
     this.backupCommand = new BackupCommand(this.config, this.logger);
   }
@@ -23,7 +24,6 @@ export class SshBackupStrategy implements BackupStrategy {
 
     const { baseArgs, queryValue } = this.backupCommand.buildMongodumpArgs(source, args);
     const filePath = this.backupCommand.buildBackupFilePath(source);
-    this.backupCommand.ensureBackupDir();
 
     const tempFilePath = `${filePath}.tmp`;
     baseArgs.push('--archive');

@@ -1,9 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AppConfig, ConnectionConfig } from '../../types';
-import { formatFilename, getFormattedTimestamps, objectIdFromTimestamp } from '../../utils/formatter';
-import { Logger } from '../../utils/logger';
-import type { BackupArgs } from './backup-strategy';
+import type { AppConfig, ConnectionConfig } from '../../../types/types';
+import type { BackupArgs } from '../interfaces/backup-args.interface';
+import { formattedTimestamp } from '../../../utils/formatted-timestamp';
+import { objectIdFromTimestamp } from '../../../utils/object-id-from-timestamp';
+import { formatFilename } from '../../../utils/format-filename';
+import { Logger } from '../../../infrastructure/logger';
 
 export class BackupCommand {
   constructor(
@@ -139,8 +141,10 @@ export class BackupCommand {
   }
 
   buildBackupFilePath(source: ConnectionConfig): string {
+    this.ensureBackupDir();
+
     const now = new Date();
-    const { date, time, datetime } = getFormattedTimestamps(now);
+    const { date, time, datetime } = formattedTimestamp(now);
     const filename = formatFilename(
       this.config.filenameFormat || 'backup_{datetime}_{source}.gz',
       date,
@@ -152,26 +156,6 @@ export class BackupCommand {
     return path.join(backupDir, filename);
   }
 
-  ensureBackupDir(): string {
-    const backupDir = path.resolve(this.config.backupDir);
-    if (!fs.existsSync(backupDir)) {
-      fs.mkdirSync(backupDir, { recursive: true });
-      this.logger.succeedSpinner(`Created backup directory: ${backupDir}`);
-    }
-    return backupDir;
-  }
-
-  cleanupFile(filePath: string): void {
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-        this.logger.succeedSpinner(`Cleaned up incomplete backup file: ${filePath}`);
-      } catch (cleanupError: any) {
-        this.logger.failSpinner(`Failed to cleanup incomplete backup file ${filePath}: ${cleanupError.message}`);
-      }
-    }
-  }
-
   handleBackupError(error: Error, source: ConnectionConfig, filePath: string, commandStringForLog?: string): never {
     const errorMsg = `Error creating backup for ${source.name}: ${error.message}`;
     this.logger.error(errorMsg);
@@ -180,5 +164,25 @@ export class BackupCommand {
     }
     this.cleanupFile(filePath);
     throw new Error(`Backup failed for ${source.name}.`);
+  }
+
+  private ensureBackupDir(): string {
+    const backupDir = path.resolve(this.config.backupDir);
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      this.logger.succeedSpinner(`Created backup directory: ${backupDir}`);
+    }
+    return backupDir;
+  }
+
+  private cleanupFile(filePath: string): void {
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        this.logger.succeedSpinner(`Cleaned up incomplete backup file: ${filePath}`);
+      } catch (cleanupError: any) {
+        this.logger.failSpinner(`Failed to cleanup incomplete backup file ${filePath}: ${cleanupError.message}`);
+      }
+    }
   }
 }

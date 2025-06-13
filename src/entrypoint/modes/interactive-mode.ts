@@ -1,24 +1,25 @@
-import { BackupController } from '../controllers/backup-controller';
-import { PresetController } from '../controllers/preset-controller';
-import { RestoreController } from '../controllers/restore-controller';
-import { BackupService } from '../services/backup.service';
-import { Config } from '../utils/config';
-import { MongoDBService } from '../services/mongodb.service';
-import { PromptService } from '../services/prompt-service';
-import { RestoreService } from '../services/restore.service';
-import { AppConfig } from '../types';
+import { BackupController } from '../../modules/backup/controllers/backup-controller';
+import { PresetController } from '../../modules/prompt/controllers/preset-controller';
+import { RestoreController } from '../../modules/restore/controllers/restore-controller';
+import { BackupService } from '../../modules/backup/services/backup.service';
+import { Config } from '../../infrastructure/config';
+import { MongoDBService } from '../../infrastructure/mongodb.service';
+import { PromptService } from '../../modules/prompt/services/prompt-service';
 
-import { Logger } from '../utils/logger';
-import { UpdateableConfig } from '../utils/updateable-config';
+import { AppConfig } from '../../types/types';
 
-export class InteractiveModule {
+import { Logger } from '../../infrastructure/logger';
+import { UpdateableConfig } from '../../infrastructure/updateable-config';
+import { RestoreService } from '../../modules/restore/services/restore.service';
+
+export class InteractiveMode {
   private appConfigParsed: AppConfig;
 
   private promptService: PromptService;
   private backupController: BackupController;
   private restoreController: RestoreController;
   private presetController: PresetController;
-  private logger: Logger = new Logger({ prefix: InteractiveModule.name });
+  private logger: Logger = new Logger({ prefix: InteractiveMode.name });
 
   constructor(configPath: string) {
     const config = new Config(configPath, new Logger({ prefix: Config.name }));

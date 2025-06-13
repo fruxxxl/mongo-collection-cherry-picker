@@ -3,10 +3,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { NodeSSH } from 'node-ssh';
-import type { SSHConfig } from '../../types';
-import { Logger } from '../../utils/logger';
+import type { SSHConfig } from '../../../types/types';
+import { Logger } from '../../../infrastructure/logger';
 
-export class SshService {
+export class SshBackupRunner {
   constructor(private readonly logger: Logger) {}
 
   /**

@@ -6,9 +6,9 @@
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "build": "tsc",
-        "interactive": "tsc && node ./dist/apps/interactive.js",
-        "backup": "tsc && node ./dist/apps/cli.js --backup",
-        "restore": "tsc && node ./dist/apps/cli.js --restore"
+        "interactive": "tsc && node ./dist/entrypoint/interactive.js",
+        "backup": "tsc && node ./dist/entrypoint/cli.js --backup",
+        "restore": "tsc && node ./dist/entrypoint/cli.js --restore"
     },
     "author": "",
     "license": "ISC",
