@@ -15,6 +15,13 @@ export class PresetController {
     private readonly logger: Logger,
   ) {}
 
+  public async managePresetsFlow(): Promise<void> {
+    const selectedPresetAction = await this.promptService.managePresets();
+    if (selectedPresetAction?.type === 'backup') {
+      await this.backupController.useBackupPreset(selectedPresetAction.preset);
+    }
+  }
+
   /**
    * Guides the user through creating a new backup preset interactively.
    * Saves the new preset to the configuration file.

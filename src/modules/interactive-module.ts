@@ -60,57 +60,40 @@ export class InteractiveModule {
   }
 
   async run(): Promise<void> {
+    const actions: Record<string, () => Promise<void>> = {
+      backup: () => this.backupController.backupDatabase(),
+      restore: () => this.restoreController.restoreDatabase(),
+      preset_create: () => this.presetController.createBackupPreset(),
+      preset_manage: () => this.presetController.managePresetsFlow(),
+    };
+
     let exit = false;
+
     while (!exit) {
       try {
         const action = await this.promptService.askForStartAction();
 
-        switch (action) {
-          case 'backup':
-            await this.backupController.backupDatabase();
-            break;
-          case 'restore':
-            await this.restoreFromBackup();
-            break;
-          case 'preset_create':
-            await this.presetController.createBackupPreset();
-            break;
-          case 'preset_manage':
-            const selectedPresetAction = await this.promptService.managePresets();
-            if (selectedPresetAction?.type === 'backup') {
-              await this.backupController.useBackupPreset(selectedPresetAction.preset);
-            }
-            break;
-          case 'exit':
-            exit = true;
-            break;
-          default:
-            this.logger.error('Invalid action selected.');
+        if (action === 'exit') {
+          exit = true;
+          continue;
+        }
+
+        const handler = actions[action];
+        if (handler) {
+          await handler();
+        } else {
+          this.logger.error('Invalid action selected.');
         }
 
         if (!exit) {
           const continueAction = await this.promptService.askForContinueAction();
-          if (!continueAction) {
-            exit = true;
-          }
+          if (!continueAction) exit = true;
         }
       } catch (error: any) {
         this.logger.error(`✖ Interactive mode error: ${error.message}`);
-        exit = true; // Exit on error
+        exit = true;
       }
     }
     this.logger.info('Exiting application.');
-  }
-
-  private async restoreFromBackup(): Promise<void> {
-    try {
-      // Use prompt service to get user input for restore
-      const { backupFile, target, options } = await this.promptService.promptForRestore();
-      // Run the restore using the collected information
-      await this.restoreController.runRestore(backupFile, target.name, options);
-    } catch (error: any) {
-      this.logger.error(`✖ Restore failed: ${error.message}`);
-      // Error is logged, no need to re-throw unless specific handling is needed here
-    }
   }
 }
