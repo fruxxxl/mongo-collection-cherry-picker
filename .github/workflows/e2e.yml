@@ -1,3 +1,11 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
 jobs:
   e2e:
     runs-on: ubuntu-22.04
