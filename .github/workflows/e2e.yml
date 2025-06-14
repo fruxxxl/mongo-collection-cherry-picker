@@ -8,7 +8,7 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     services:
       docker:
         image: docker:24.0.7-dind
