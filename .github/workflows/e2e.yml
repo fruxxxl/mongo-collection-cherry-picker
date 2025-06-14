@@ -1,0 +1,39 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0.7-dind
+    env:
+      DOCKER_HOST: tcp://localhost:2375/
+      DOCKER_TLS_CERTDIR: ""
+      TESTCONTAINERS_RYUK_DISABLED: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install mongodump/mongorestore
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mongodb-clients
+      - name: Install dependencies
+        run: npm ci
+      - name: Build project
+        run: npm run build
+      - name: Run e2e tests with coverage
+        run: npm run test:e2e -- --coverage --coverageDirectory=coverage-e2e
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e
+          path: coverage-e2e

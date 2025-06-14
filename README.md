@@ -1,3 +1,5 @@
+[![E2E Tests](https://github.com/alexsh/mongo-collection-cherry-picker/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/alexsh/mongo-collection-cherry-picker/actions/workflows/e2e.yml)
+
 # MongoDB Collection Cherry Picker 🍒
 
 A powerful CLI tool for managing MongoDB database backups with fine-grained collection selection, preset management, and SSH support.
