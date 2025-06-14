@@ -77,6 +77,15 @@ describe('mongo-collection-cherry-picker e2e', () => {
           port: port,
         },
       ],
+      backupPresets: [
+        {
+          name: 'users_only',
+          sourceName: 'test_source_db',
+          selectionMode: 'include',
+          collections: ['users'],
+          createdAt: new Date().toISOString(),
+        },
+      ],
     };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -127,5 +136,32 @@ describe('mongo-collection-cherry-picker e2e', () => {
     expect(usersRestored.length).toBe(users.length);
     expect(productsRestored.length).toBe(products.length);
     expect(ordersRestored.length).toBe(orders.length);
+  });
+
+  it('should backup only users collection using preset', async () => {
+    execSync(`npm run backup -- --config=${CONFIG_PATH} --preset=users_only`, { stdio: 'inherit' });
+    const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.includes('test_source_db') && f.endsWith('.gz'));
+    expect(files.length).toBeGreaterThan(0);
+    const backupFile = files[files.length - 1];
+    // Clear all collections
+    await client.db(TEST_DB).collection('users').deleteMany({});
+    await client.db(TEST_DB).collection('products').deleteMany({});
+    await client.db(TEST_DB).collection('orders').deleteMany({});
+    // Restore only users
+    execSync(`npm run restore -- --config=${CONFIG_PATH} --file="${backupFile}" --target="test_restore_db"`, {
+      stdio: 'inherit',
+    });
+    const usersRestored = await client.db(TEST_DB).collection('users').find().toArray();
+    const productsRestored = await client.db(TEST_DB).collection('products').find().toArray();
+    const ordersRestored = await client.db(TEST_DB).collection('orders').find().toArray();
+    expect(usersRestored.length).toBe(users.length);
+    expect(productsRestored.length).toBe(0);
+    expect(ordersRestored.length).toBe(0);
+  });
+
+  it('should fail on non-existent preset', () => {
+    expect(() => {
+      execSync(`npm run backup -- --config=${CONFIG_PATH} --preset=not_exist`, { encoding: 'utf-8' });
+    }).toThrow(/not found/i);
   });
 });
