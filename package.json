@@ -4,16 +4,19 @@
     "description": "Interactive tool for MongoDB backup and restoration",
     "main": "dist/index.js",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
+        "test": "test/run-tests.sh",
+        "test:e2e": "jest --config=jest.e2e.config.js",
         "build": "tsc && tsc-alias",
-        "interactive": "npm run build && node ./dist/entrypoint/interactive.js",
-        "backup": "npm run build && node ./dist/entrypoint/cli.js --backup",
-        "restore": "npm run build && node ./dist/entrypoint/cli.js --restore"
+        "interactive:dev": "npm run build && node ./dist/entrypoint/interactive.js",
+        "interactive": "node ./dist/entrypoint/interactive.js",
+        "backup": "node ./dist/entrypoint/cli.js --backup",
+        "restore": "node ./dist/entrypoint/cli.js --restore"
     },
     "author": "",
     "license": "ISC",
     "devDependencies": {
         "@types/inquirer": "^8.2.1",
+        "@types/jest": "^29.5.14",
         "@types/mongodb": "^4.0.7",
         "@types/node": "^20.11.5",
         "@types/node-ssh": "^11.0.0",
@@ -27,7 +30,11 @@
         "eslint-import-resolver-typescript": "^3.6.1",
         "eslint-plugin-import": "^2.29.1",
         "eslint-plugin-prettier": "^5.1.3",
+        "jest": "^30.0.0",
+        "mongodb": "^6.17.0",
         "prettier": "^3.2.5",
+        "testcontainers": "^11.0.3",
+        "ts-jest": "^29.4.0",
         "tsc-alias": "^1.8.16",
         "typescript": "^5.4.3"
     },
@@ -36,7 +43,6 @@
         "date-fns": "^4.1.0",
         "dotenv": "^16.4.5",
         "inquirer": "^8.2.6",
-        "mongodb": "^4.4.1",
         "ora": "^5.4.1",
         "source-map-support": "^0.5.21",
         "ssh2": "^1.15.0",

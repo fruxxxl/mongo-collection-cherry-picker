@@ -58,6 +58,9 @@ export class BackupService {
    * @throws An error if the metadata file is not found or cannot be parsed.
    */
   loadBackupMetadata(backupFilename: string): BackupMetadata {
+    console.log('this.config.backupDir', this.config.backupDir);
+    console.log('backupFilename', backupFilename);
+
     const metadataPath = path.join(this.config.backupDir, `${backupFilename}.json`);
     if (!fs.existsSync(metadataPath)) {
       this.logger.warn(`Metadata file not found: ${metadataPath}`);

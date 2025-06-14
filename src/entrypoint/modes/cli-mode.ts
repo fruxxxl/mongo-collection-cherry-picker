@@ -34,6 +34,8 @@ export interface CommandLineArgs {
   drop?: boolean;
   /** Filter backup by _id timestamp (ISO 8601 or relative like "1d", "7d", "3h"). */
   sinceTime?: string;
+  /** Overrited config path */
+  configPath: string;
 }
 
 export class CLIMode {
@@ -45,8 +47,8 @@ export class CLIMode {
 
   constructor(configPath: string) {
     this.logger = new Logger({ prefix: CLIMode.name });
-    this.args = this.parseCommandLineArgs();
-    this.config = new Config(configPath, new Logger({ prefix: Config.name })).parsed;
+    this.args = this.parseCommandLineArgs(configPath);
+    this.config = new Config(this.args.configPath, new Logger({ prefix: Config.name })).parsed;
     const backupService = new BackupService(this.config, new Logger({ prefix: BackupService.name }));
     const mongoService = new MongoDBService(new Logger({ prefix: MongoDBService.name }));
     const restoreService = new RestoreService(this.config, new Logger({ prefix: RestoreService.name }));
@@ -224,29 +226,34 @@ export class CLIMode {
     return undefined; // Indicate parsing failure
   }
 
-  private parseCommandLineArgs(): CommandLineArgs {
+  private parseCommandLineArgs(configPath: string): CommandLineArgs {
     const args = process.argv.slice(2);
 
-    let mode: 'backup' | 'restore' | undefined;
+    let action: 'backup' | 'restore' | undefined;
     let source: string | undefined;
-    let backupMode: 'all' | 'include' | 'exclude' | undefined;
+    let scope: 'all' | 'include' | 'exclude' | undefined;
     let collections: string[] | undefined;
     let preset: string | undefined;
     let backupFile: string | undefined;
     let target: string | undefined;
     let drop: boolean = false;
-    let interactive: boolean | undefined = undefined;
     let sinceTime: string | undefined;
 
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
 
-      if (arg === '--backup' || arg === '--mode=backup') {
-        mode = 'backup';
+      if (arg.startsWith('--config=')) {
+        configPath = arg.split('=')[1];
         continue;
       }
-      if (arg === '--restore' || arg === '--mode=restore') {
-        mode = 'restore';
+
+      if (arg === '--backup' || arg === '--action=backup') {
+        action = 'backup';
+        continue;
+      }
+
+      if (arg === '--restore' || arg === '--action=restore') {
+        action = 'restore';
         continue;
       }
 
@@ -255,12 +262,12 @@ export class CLIMode {
         continue;
       }
 
-      if (arg.startsWith('--backupMode=')) {
-        const modeValue = arg.split('=')[1];
-        if (['all', 'include', 'exclude'].includes(modeValue)) {
-          backupMode = modeValue as 'all' | 'include' | 'exclude';
+      if (arg.startsWith('--scope=')) {
+        const scopeValue = arg.split('=')[1];
+        if (['all', 'include', 'exclude'].includes(scopeValue)) {
+          scope = scopeValue as 'all' | 'include' | 'exclude';
         } else {
-          this.logger.warn(`Invalid --backupMode value: ${modeValue}. Using default.`);
+          this.logger.warn(`Invalid --backupMode value: ${scope}. Using default.`);
         }
         continue;
       }
@@ -294,11 +301,6 @@ export class CLIMode {
         continue;
       }
 
-      if (arg === '--interactive' || arg === 'interactive') {
-        interactive = true;
-        continue;
-      }
-
       if (arg.startsWith('--since-time=')) {
         sinceTime = arg.split('=')[1];
         continue;
@@ -314,41 +316,31 @@ export class CLIMode {
       }
     }
 
-    let finalInteractive: boolean;
-    if (interactive === true) {
-      finalInteractive = true;
-    } else if (interactive === false) {
-      finalInteractive = false;
-    } else {
-      finalInteractive = !(mode || preset);
+    if (action === 'backup' && !source && !preset) {
+      this.logger.error('Error: --source or --preset is required for backup mode in non-interactive run.');
+      process.exit(1);
     }
-
-    if (!finalInteractive) {
-      if (mode === 'backup' && !source && !preset) {
-        this.logger.error('Error: --source or --preset is required for backup mode in non-interactive run.');
-        process.exit(1);
-      }
-      if (mode === 'restore' && !target && !preset) {
-        this.logger.error('Error: --target or --preset is required for restore mode in non-interactive run.');
-        process.exit(1);
-      }
-      if (mode === 'restore' && !backupFile && !preset) {
-        this.logger.error('Error: --backupFile is required for restore mode when not using a preset.');
-        process.exit(1);
-      }
+    if (action === 'restore' && !target && !preset) {
+      this.logger.error('Error: --target or --preset is required for restore mode in non-interactive run.');
+      process.exit(1);
+    }
+    if (action === 'restore' && !backupFile && !preset) {
+      this.logger.error('Error: --backupFile is required for restore mode when not using a preset.');
+      process.exit(1);
     }
 
     return {
-      mode: finalInteractive ? undefined : mode,
-      interactive: finalInteractive,
+      mode: action,
+      interactive: false,
       source,
-      backupMode,
+      backupMode: scope,
       collections,
       preset,
       backupFile,
       target,
       drop,
       sinceTime,
+      configPath,
     };
   }
 }
