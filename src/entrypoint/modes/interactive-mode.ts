@@ -62,7 +62,7 @@ export class InteractiveMode {
   async run(): Promise<void> {
     const actions: Record<string, () => Promise<void>> = {
       backup: () => this.backupController.backupDatabase(),
-      restore: () => this.restoreController.restoreDatabase(),
+      restore: () => this.restoreController.restoreDatabaseInteractively(),
       preset_create: async () => {
         const preset = await this.presetController.createPresetInteractively();
         if (preset && (await this.promptService.askRunPresetNow())) {

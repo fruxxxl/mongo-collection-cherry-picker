@@ -721,4 +721,19 @@ export class PromptService {
       queryStartTime,
     };
   }
+
+  /**
+   * Prompts the user to confirm if they want to delete a backup preset.
+   * @param preset - The preset to delete.
+   * @returns A promise that resolves with the user's confirmation.
+   */
+  async askConfirmDeletePreset(preset: BackupPreset): Promise<boolean> {
+    const { confirmDelete } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirmDelete',
+      message: `Delete preset "${preset.name}" without recovery?`,
+      default: false,
+    });
+    return confirmDelete;
+  }
 }

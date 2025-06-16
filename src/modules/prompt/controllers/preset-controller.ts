@@ -1,9 +1,8 @@
-import inquirer from 'inquirer';
-import { PromptService } from '../services/prompt-service';
+import type { BackupPreset } from '@ts-types/mixed';
 
 import { Logger } from '@infrastructure/logger';
 import { UpdateableConfig } from '@config/updateable-config';
-import type { BackupPreset } from '@ts-types/mixed';
+import { PromptService } from '../services/prompt-service';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
@@ -35,7 +34,7 @@ export class PresetController {
           this.logger.info('----------------------');
           break;
         case 'delete':
-          if (await this.confirmDeletePreset(action.preset)) {
+          if (await this.promptService.askConfirmDeletePreset(action.preset)) {
             this.removePreset(action.preset.name);
             await this.saveConfig();
             this.logger.info(`Preset "${action.preset.name}" deleted.`);
@@ -85,15 +84,5 @@ export class PresetController {
 
   private async saveConfig(): Promise<void> {
     this.config.update(this.config.parsed);
-  }
-
-  private async confirmDeletePreset(preset: BackupPreset): Promise<boolean> {
-    const { confirmDelete } = await inquirer.prompt({
-      type: 'confirm',
-      name: 'confirmDelete',
-      message: `Delete preset "${preset.name}" without recovery?`,
-      default: false,
-    });
-    return confirmDelete;
   }
 }

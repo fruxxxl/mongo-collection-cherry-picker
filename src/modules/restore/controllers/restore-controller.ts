@@ -1,10 +1,9 @@
 import path from 'path';
-import inquirer from 'inquirer';
 import fs from 'fs';
 
 import type { PromptService } from '@modules/prompt/services/prompt-service';
-import type { AppConfig, ConnectionConfig, BackupMetadata } from '@ts-types/mixed';
-import type { RestorePreset } from '../interfaces/restore-preset.interface';
+import type { AppConfig, BackupMetadata } from '@ts-types/mixed';
+
 import { Logger } from '@infrastructure/logger';
 import { RestoreService } from '../services/restore.service';
 import { BackupService } from '@modules/backup/services/backup.service';
@@ -94,7 +93,7 @@ export class RestoreController {
    * Initiates the interactive restore process.
    * Prompts the user for backup file and target, then calls runRestore.
    */
-  async restoreDatabase(): Promise<void> {
+  async restoreDatabaseInteractively(): Promise<void> {
     this.logger.startSpinner('Starting interactive restore...');
     try {
       this.logger.stopSpinner();
@@ -104,68 +103,6 @@ export class RestoreController {
       await this.runRestore(backupFile, target.name, options);
     } catch (error: any) {
       this.logger.failSpinner(`Interactive restore failed: ${error.message}`);
-    }
-  }
-
-  async useRestorePreset(preset: RestorePreset): Promise<void> {
-    const target = this.config.connections.find((conn: ConnectionConfig) => conn.name === preset.targetName);
-
-    if (!target) {
-      throw new Error(`Target "${preset.targetName}" not found in configuration`);
-    }
-
-    const backupFiles = this.backupService.getBackupFiles();
-
-    let filteredFiles = backupFiles;
-    if (preset.backupPattern) {
-      const pattern = new RegExp(preset.backupPattern.replace('*', '.*'));
-      filteredFiles = backupFiles.filter((file: string) => pattern.test(file));
-    }
-
-    if (filteredFiles.length === 0) {
-      throw new Error('No backup files found matching pattern');
-    }
-
-    const { backupFile } = await inquirer.prompt({
-      type: 'list',
-      name: 'backupFile',
-      message: 'Select backup file for restoration:',
-      choices: filteredFiles,
-    });
-
-    const backupMetadata = this.backupService.loadBackupMetadata(backupFile);
-
-    const options = preset.options || {};
-
-    const commandArgs = [
-      `--host=${target.host || 'localhost'}:${target.port || 27017}`,
-      `--db=${target.database}`,
-      '--gzip',
-      `--archive=${path.join(this.config.backupDir, backupFile)}`,
-    ];
-
-    if (options.drop) {
-      commandArgs.push('--drop');
-    }
-
-    this.logger.info('Command to be executed:');
-    this.logger.info(`mongorestore ${commandArgs.join(' ')}`);
-
-    const { confirm } = await inquirer.prompt({
-      type: 'confirm',
-      name: 'confirm',
-      message: 'Confirm command execution:',
-      default: true,
-    });
-
-    if (confirm) {
-      this.logger.startSpinner('Restoring backup...');
-      try {
-        await this.restoreService.restoreBackup(backupMetadata, target, options);
-        this.logger.succeedSpinner(`Backup successfully restored to database ${target.database}`);
-      } catch (error) {
-        this.logger.failSpinner(`Error restoring backup: ${error instanceof Error ? error.message : String(error)}`);
-      }
     }
   }
 }
