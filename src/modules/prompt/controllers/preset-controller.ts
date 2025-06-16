@@ -4,6 +4,7 @@ import { PromptService } from '../services/prompt-service';
 import { Logger } from '@infrastructure/logger';
 import { UpdateableConfig } from '@config/updateable-config';
 import { BackupController } from '@modules/backup/controllers/backup-controller';
+import type { BackupPreset } from '@ts-types/mixed';
 
 /**
  * Manages backup presets: creation, listing, deletion, and execution.
@@ -16,73 +17,86 @@ export class PresetController {
     private readonly logger: Logger,
   ) {}
 
+  /**
+   * Main flow for managing presets.
+   */
   public async managePresetsFlow(): Promise<void> {
-    const selectedPresetAction = await this.promptService.managePresets();
-    if (selectedPresetAction?.type === 'backup') {
-      await this.backupController.useBackupPreset(selectedPresetAction.preset);
+    while (true) {
+      const action = await this.promptService.promptPresetAction();
+      if (!action) break;
+
+      switch (action.type) {
+        case 'backup':
+          await this.runPreset(action.preset);
+          break;
+        case 'view':
+          this.logger.info('--- Preset details ---');
+          this.logger.info(JSON.stringify(action.preset, null, 2));
+          this.logger.info('----------------------');
+          break;
+        case 'delete':
+          if (await this.confirmDeletePreset(action.preset)) {
+            this.removePreset(action.preset.name);
+            await this.saveConfig();
+            this.logger.info(`Preset "${action.preset.name}" deleted.`);
+          } else {
+            this.logger.info('Deletion cancelled.');
+          }
+          break;
+      }
     }
   }
 
   /**
-   * Guides the user through creating a new backup preset interactively.
-   * Saves the new preset to the configuration file.
-   * Optionally runs the newly created preset immediately.
+   * Interactive preset creation and (optionally) running.
    */
-  async createBackupPreset(): Promise<void> {
+  public async createPresetInteractively(): Promise<void> {
     try {
       const newPreset = await this.promptService.promptForPreset();
-
-      // Check for duplicate name
-      if (this.config.parsed.backupPresets?.some((p) => p.name === newPreset.name)) {
-        this.logger.warn(
-          `Warning: A preset with the name "${newPreset.name}" already exists. Overwriting is not supported via creation. Please edit or delete the existing preset.`,
-        );
+      if (this.isPresetNameDuplicate(newPreset.name)) {
+        this.logger.warn(`Preset with name "${newPreset.name}" already exists.`);
         return;
       }
-
-      this.config.parsed.backupPresets.push(newPreset);
-      this.config.update(this.config.parsed);
-      this.logger.succeedSpinner(`Backup preset "${newPreset.name}" created successfully!`);
-
-      // Ask if the user wants to run the new preset right away
-      const { useNow } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'useNow',
-        message: 'Do you want to run this new backup preset now?',
-        default: true,
-      });
-
-      if (useNow) {
-        // Use the backupController to execute the preset
-        await this.backupController.useBackupPreset(newPreset);
+      this.addPreset(newPreset);
+      await this.saveConfig();
+      this.logger.succeedSpinner(`Preset "${newPreset.name}" created!`);
+      if (await this.promptService.confirmRunPresetNow()) {
+        await this.runPreset(newPreset);
       }
     } catch (error: any) {
-      this.logger.failSpinner(`Error creating backup preset: ${error.message}`);
+      this.logger.failSpinner(`Error creating preset: ${error.message}`);
     }
   }
 
-  /**
-   * Interactively manages existing presets (Use, View, Delete).
-   * Fetches the list of presets and prompts the user for actions.
-   */
-  async managePresets(): Promise<void> {
-    this.logger.info('--- Manage Existing Presets ---');
-    try {
-      // Use prompt service to handle preset selection and action
-      const selection = await this.promptService.managePresets();
+  // --- Private methods ---
 
-      // If a preset was selected and the action was 'use'
-      if (selection && selection.type === 'backup') {
-        // Currently only handles backup presets
-        this.logger.info(`Proceeding to use selected preset: "${selection.preset.name}"`);
-        // Use the backupController to execute the selected preset
-        await this.backupController.useBackupPreset(selection.preset);
-      } else {
-        // User cancelled, viewed details, or deleted a preset (handled within promptService/managePresets)
-        this.logger.info('Returning to main menu or exiting.');
-      }
-    } catch (error: any) {
-      this.logger.failSpinner(`Error managing presets: ${error.message}`);
-    }
+  private isPresetNameDuplicate(name: string): boolean {
+    return this.config.parsed.backupPresets?.some((p) => p.name === name) ?? false;
+  }
+
+  private addPreset(preset: BackupPreset): void {
+    this.config.parsed.backupPresets.push(preset);
+  }
+
+  private removePreset(name: string): void {
+    this.config.parsed.backupPresets = this.config.parsed.backupPresets.filter((p) => p.name !== name);
+  }
+
+  private async saveConfig(): Promise<void> {
+    this.config.update(this.config.parsed);
+  }
+
+  private async runPreset(preset: BackupPreset): Promise<void> {
+    await this.backupController.useBackupPreset(preset);
+  }
+
+  private async confirmDeletePreset(preset: BackupPreset): Promise<boolean> {
+    const { confirmDelete } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'confirmDelete',
+      message: `Delete preset "${preset.name}" without recovery?`,
+      default: false,
+    });
+    return confirmDelete;
   }
 }

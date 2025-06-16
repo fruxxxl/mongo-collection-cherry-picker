@@ -475,7 +475,16 @@ export class PromptService {
     };
   }
 
-  async managePresets(): Promise<{ type: 'backup'; preset: BackupPreset } | undefined> {
+  /**
+   * Shows the preset management menu and returns the selected action and preset.
+   * Does not change the config, does not delete or save presets.
+   */
+  async promptPresetAction(): Promise<
+    | { type: 'backup'; preset: BackupPreset }
+    | { type: 'view'; preset: BackupPreset }
+    | { type: 'delete'; preset: BackupPreset }
+    | undefined
+  > {
     const backupPresets = this.config.parsed.backupPresets || [];
 
     if (backupPresets.length === 0) {
@@ -486,17 +495,17 @@ export class PromptService {
     const choices = [
       ...backupPresets.map((preset) => ({
         name: `[Backup] ${preset.name}${preset.description ? ` - ${preset.description}` : ''}`,
-        value: { type: 'backup', preset },
+        value: preset,
       })),
       new inquirer.Separator(),
       { name: 'Cancel', value: null },
     ];
 
-    const { selected } = await inquirer.prompt<{ selected: { type: 'backup'; preset: BackupPreset } | null }>({
+    const { selected } = await inquirer.prompt<{ selected: BackupPreset | null }>({
       type: 'list',
       name: 'selected',
       message: 'Select a preset to manage:',
-      choices: choices,
+      choices,
       loop: false,
     });
 
@@ -508,53 +517,40 @@ export class PromptService {
     const { action } = await inquirer.prompt({
       type: 'list',
       name: 'action',
-      message: `Action for preset "${selected.preset.name}":`,
+      message: `Action for preset "${selected.name}":`,
       choices: [
-        { name: 'Use Preset Now', value: 'use' },
-        { name: 'View Details', value: 'view' },
-        { name: 'Delete Preset', value: 'delete' },
+        { name: 'Use preset', value: 'use' },
+        { name: 'View details', value: 'view' },
+        { name: 'Delete preset', value: 'delete' },
         { name: 'Cancel', value: 'cancel' },
       ],
     });
 
     switch (action) {
       case 'use':
-        return selected;
+        return { type: 'backup', preset: selected };
       case 'view':
-        this.logger.info('--- Preset Details ---');
-        this.logger.info(JSON.stringify(selected.preset, null, 2));
-        this.logger.info('----------------------');
-        return undefined;
+        return { type: 'view', preset: selected };
       case 'delete':
-        const { confirmDelete } = await inquirer.prompt({
-          type: 'confirm',
-          name: 'confirmDelete',
-          message: `Are you sure you want to permanently delete the preset "${selected.preset.name}"?`,
-          default: false,
-        });
-
-        if (confirmDelete) {
-          if (selected.type === 'backup') {
-            this.config.parsed.backupPresets = this.config.parsed.backupPresets?.filter(
-              (p) => p.name !== selected.preset.name,
-            );
-          }
-
-          try {
-            this.config.update(this.config.parsed);
-            this.logger.info(`Preset "${selected.preset.name}" deleted successfully.`);
-          } catch (saveError: any) {
-            this.logger.error(`Error saving configuration after deleting preset: ${saveError.message}`);
-          }
-        } else {
-          this.logger.info('Preset deletion cancelled.');
-        }
-        return undefined;
+        return { type: 'delete', preset: selected };
       case 'cancel':
       default:
         this.logger.info('Action cancelled.');
         return undefined;
     }
+  }
+
+  /**
+   * Confirm running preset immediately after creation.
+   */
+  async confirmRunPresetNow(): Promise<boolean> {
+    const { useNow } = await inquirer.prompt({
+      type: 'confirm',
+      name: 'useNow',
+      message: 'Do you want to run this preset now?',
+      default: true,
+    });
+    return useNow;
   }
 
   /**

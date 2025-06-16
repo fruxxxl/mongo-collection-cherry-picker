@@ -64,7 +64,7 @@ export class InteractiveMode {
     const actions: Record<string, () => Promise<void>> = {
       backup: () => this.backupController.backupDatabase(),
       restore: () => this.restoreController.restoreDatabase(),
-      preset_create: () => this.presetController.createBackupPreset(),
+      preset_create: () => this.presetController.createPresetInteractively(),
       preset_manage: () => this.presetController.managePresetsFlow(),
     };
 

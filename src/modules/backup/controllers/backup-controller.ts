@@ -102,16 +102,6 @@ export class BackupController {
     }
   }
 
-  async manageBackupPresets(): Promise<void> {
-    const selectedPresetAction = await this.promptService.managePresets();
-
-    if (selectedPresetAction && selectedPresetAction.type === 'backup') {
-      const preset = selectedPresetAction.preset as BackupPreset;
-      this.logger.info(`Using backup preset: ${preset.name}`);
-      await this.useBackupPreset(preset);
-    }
-  }
-
   /**
    * Executes a backup using a predefined preset.
    * @param preset - The backup preset configuration.
