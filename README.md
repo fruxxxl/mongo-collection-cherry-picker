@@ -2,234 +2,173 @@
 
 # MongoDB Collection Cherry Picker 🍒
 
-A powerful CLI tool for managing MongoDB database backups with fine-grained collection selection, preset management, and SSH support.
+A powerful, interactive CLI tool for MongoDB backups and restores—with fine-grained collection selection, SSH support, and a sprinkle of fun.
 
-## 🚀 Overview
+---
 
-MongoDB Collection Cherry Picker allows you to easily create and restore database backups with precise control over which collections to include or exclude. It supports both local and remote MongoDB instances (via SSH tunnel), provides interactive and non-interactive modes, and allows saving common configurations as presets, making it suitable for both manual operations and automated scripts.
+## ⚡️ Quickstart
+
+```bash
+npm ci
+npm run build
+
+# Interactive mode (recommended for most users)
+npm run interactive:dev   # after build, for development
+npm run interactive       # after build, for production
+
+# CLI mode (for automation, CI, or scripting)
+npm run backup -- --config=./myconfig.json --source=localDev --scope=all
+npm run backup -- --config=./myconfig.json --preset=users_only
+npm run restore -- --config=./myconfig.json --file=backup_2023-10-28_stagingServer.gz --target=localDev
+```
+
+- All CLI arguments must be passed after `--` (npm convention).
+- For restore, you can use either `--file` or `--backupFile` (we're flexible like that).
+- Use `--config=...` to specify a custom config file (highly recommended for tests and CI).
+
+---
 
 ## ✨ Features
 
--   💾 **Selective Backups:** Create MongoDB backups choosing `all` collections, `including` specific ones, or `excluding` specific ones.
--   🔄 **Flexible Restores:** Restore databases from backup archives.
-    -   Optionally drop existing collections in the target database before restore.
-    -   Restore across different databases (e.g., production backup to staging database).
--   🔌 **Multiple Connections:** Manage configurations for various MongoDB instances (local, remote, different auth).
--   🔒 **SSH Tunnel Support:** Perform backups and restores on remote MongoDB instances accessible only via SSH.
--   🖥️ **Interactive Mode:** User-friendly prompts guide you through backup, restore, and preset management.
--   🤖 **Non-Interactive Mode:** Use command-line arguments for automation and scripting.
--   📋 **Presets:** Define, save, and reuse common backup configurations (source, collections, mode).
--   📝 **Metadata:** Each backup archive (`.gz`) includes a companion JSON file (`.gz.json`) detailing the backup parameters (source, database, collections included/excluded, mode, timestamp).
--   📄 **Customizable Filenames:** Configure the naming format for backup files.
--   🗜️ **Gzip Compression:** Backups are automatically compressed.
+- **Selective Backups:** All, include, or exclude specific collections.
+- **Flexible Restores:** Restore to any connection, drop collections if you dare.
+- **Multiple Connections:** Local, remote, SSH—bring your own MongoDB.
+- **SSH Tunnel Support:** Back up remote DBs like a pro.
+- **Interactive Mode:** User-friendly prompts, zero guesswork.
+- **CLI Mode:** Scriptable, automatable, CI/CD-friendly.
+- **Presets:** Save and reuse your favorite backup configs.
+- **Metadata:** Every backup comes with a juicy JSON sidecar.
+- **Custom Filenames:** Tweak your backup naming scheme.
+- **Gzip Compression:** Because size matters.
 
-Demo video:
-[![Watch the video](https://img.youtube.com/vi/_wcxIeL43xk/0.jpg)](https://youtu.be/_wcxIeL43xk?si=GsXqrSNrsxDtTtKi)
-
-## 📥 Installation
-
-```bash
-# Clone the repository (if you haven't already)
-# git clone <repository-url>
-# cd mongo-collection-cherry-picker
-
-# Install dependencies
-npm install
-
-# Compile TypeScript (optional, for running with node)
-npm run build
-```
+---
 
 ## ⚙️ Configuration (`config.json`)
 
-Create or modify the `config.json` file in your project root:
+Place a `config.json` in your project root. All fields are validated at startup. Example:
 
 ```json
 {
-  "backupDir": "./backups", // Directory to store backup files
-  "filenameFormat": "backup_{{datetime}}_{{source}}.gz", // Format for backup filenames. Placeholders: {{date}} (DD-MM-YYYY), {{datetime}} (DD-MM-YYYY_HH-mm), {{source}}
-  "mongodumpPath": "mongodump", // Optional: Path to mongodump executable
-  "mongorestorePath": "mongorestore", // Optional: Path to mongorestore executable
+  "backupDir": "./backups", // (string, optional) Where to store backups. Default: './backups'
+  "filenameFormat": "backup_{{datetime}}_{{source}}.gz", // (string, optional) Filename template. Default: 'backup_{{datetime}}_{{source}}.gz'
+  "mongodumpPath": "mongodump", // (string, optional) Path to mongodump. Default: 'mongodump'
+  "mongorestorePath": "mongorestore", // (string, optional) Path to mongorestore. Default: 'mongorestore'
   "connections": [
     {
-      "name": "localDev", // Unique name for the connection
-      "uri": "mongodb://localhost:27017/", // MongoDB connection URI (preferred)
-      "database": "devdb" // Default database for this connection
-    },
-    {
-      "name": "stagingServer",
-      "uri": "mongodb://user:pass@remote.host:27017/stagingdb?authSource=admin", // URI for the remote DB
-      "database": "stagingdb", // Database name (required if not in URI for some operations)
-      "ssh": { // SSH Tunnel Configuration
-        "host": "ssh.yourserver.com", // SSH host
-        "port": 22,                   // SSH port
-        "username": "ssh_user",       // SSH username
-        "privateKey": "~/.ssh/id_rsa", // Path to your SSH private key (~/ is expanded)
-        "passphrase": "your_key_passphrase", // Optional: if your key is protected
-        "password": "your_password" // Optional: if your key is protected
-      }
-    },
-    {
-      "name": "prodReadOnly",
-       // Example without URI - using host/port/auth
-      "host": "prod.db.internal",
+      "name": "localDev", // (required) Unique name
+      "uri": "mongodb://localhost:27017/", // (optional) Connection URI (preferred)
+      "database": "devdb", // (required) Default DB
+      // If no URI, use host/port/auth fields:
+      "host": "localhost",
       "port": 27017,
-      "database": "production",
-      "username": "readonly_user",
-      "password": "secure_password",
-      "authenticationDatabase": "admin"
+      "username": "user",
+      "password": "pass",
+      "authenticationDatabase": "admin",
+      "ssh": { // (optional) SSH tunnel
+        "host": "ssh.yourserver.com",
+        "port": 22,
+        "username": "ssh_user",
+        "privateKey": "~/.ssh/id_rsa",
+        "passphrase": "hunter2",
+        "password": "optional"
+      }
     }
-    // Add more connections as needed
   ],
-  "backupPresets": [ // Optional: Define reusable backup configurations
+  "backupPresets": [ // (optional) Save your favorite configs
     {
-      "name": "Core Staging Data", // Unique name for the preset
-      "sourceName": "stagingServer", // Name of the connection to use
-      "description": "Backup essential collections from staging",
-      "selectionMode": "include", // 'include', 'exclude', or 'all'
-      "collections": [ // Required for 'include' and 'exclude' modes
-        "users",
-        "products",
-        "orders"
-      ],
-      "queryStartTime": "2023-10-27T00:00:00Z", // Optional: Example start time
-      "createdAt": "2023-10-27T10:30:00Z" // Managed by the tool
-    },
-    {
-      "name": "Full Staging Without Logs",
-      "sourceName": "stagingServer",
-      "selectionMode": "exclude",
-      "collections": ["logs", "audit_trails"],
-      "createdAt": "2023-10-27T11:00:00Z"
+      "name": "Core Staging Data", // (required)
+      "sourceName": "localDev", // (required)
+      "description": "Backup essential collections", // (optional)
+      "selectionMode": "include", // 'all', 'include', or 'exclude'
+      "collections": ["users", "products"], // (required for include/exclude)
+      "queryStartTime": "2023-10-27T00:00:00Z", // (optional, ISO8601)
+      "createdAt": "2023-10-27T10:30:00Z" // (required, auto-managed)
     }
   ]
 }
 ```
 
-**Configuration Fields:**
+**Field details:**
+- `backupDir`: Where backup archives and metadata live. Default: `./backups`
+- `filenameFormat`: Template for backup filenames. Placeholders:
+  - `{{date}}`: Current date (DD-MM-YYYY)
+  - `{{datetime}}`: Date and time (DD-MM-YYYY_HH-mm)
+  - `{{source}}`: Name of the source connection
+- `mongodumpPath`, `mongorestorePath`: Optional. Use system default if not set.
+- `connections`: Array of connection configs. Each needs a unique `name` and a `database`. Use `uri` or host/port/auth fields. SSH is optional.
+- `backupPresets`: Optional array of presets. Each needs a unique `name`, `sourceName`, `selectionMode`, and `createdAt`. `collections` is required for `include`/`exclude` modes. `queryStartTime` is optional (ISO8601).
 
-*   `backupDir`: Path where backup archives (`.gz`) and metadata (`.gz.json`) files are stored.
-*   `filenameFormat`: Template for naming backup files.
-    *   `{{date}}`: Replaced with the current date (DD-MM-YYYY).
-    *   `{{datetime}}`: Replaced with the current date and time (e.g., `08-04-2025_15-30`). Recommended for preventing overwrites.
-    *   `{{source}}`: Replaced with the `name` of the source connection.
-*   `mongodumpPath`, `mongorestorePath`: Optional: Specify the full path to the executables if not in system PATH.
-*   `connections`: Array of MongoDB connection configurations.
-    *   `name`: Unique identifier.
-    *   `uri`: MongoDB connection string (recommended). Takes precedence over host/port/auth fields.
-    *   `database`: Target database name.
-    *   `host`, `port`, `username`, `password`, `authenticationDatabase`/`authSource`: Used if `uri` is not provided.
-    *   `ssh`: Optional object for connections requiring an SSH tunnel (`host`, `port`, `username`, `privateKey`, `passphrase`, `password`).
-*   `backupPresets`: Optional array of predefined backup configurations.
-    *   `name`: Unique identifier.
-    *   `sourceName`: The `name` of the connection to use.
-    *   `selectionMode`: `'include'`, `'exclude'`, or `'all'`.
-    *   `collections`: Array of collection names (required if `selectionMode` is `'include'` or `'exclude'`).
-    *   `queryStartTime`: Optional string. Can be used to specify a start time for the backup query (e.g., for point-in-time recovery scenarios or data filtering based on time). Format should be suitable for MongoDB's `--query` option if used.
-    *   `createdAt`: Timestamp (managed by the tool).
+---
 
 ## 🖥️ Usage
 
-Run the tool using `ts-node` (for development) or `node` (after building).
-
-```bash
-# Using ts-node for interactive mode
-npx ts-node src/apps/interactive.ts
-
-# Using ts-node for CLI mode
-npx ts-node src/apps/cli.ts [arguments]
-
-# Using compiled code for interactive mode
-node dist/apps/interactive.js
-
-# Using compiled code for CLI mode
-node dist/apps/cli.js [arguments]
-```
-
 ### Interactive Mode
 
-Start the tool in interactive mode for a guided experience:
+- Run `npm run interactive:dev` (for dev) or `npm run interactive` (for production) after building the project.
+- You'll get a friendly menu for backup, restore, and preset management. No need to remember any flags—just follow the prompts!
+
+### CLI Mode
+
+- For scripting, automation, or if you just love flags:
 
 ```bash
-# Using ts-node
-npx ts-node src/apps/interactive.ts
-# or
-# Using compiled code
-node dist/apps/interactive.js
+npm run backup -- --config=./myconfig.json --source=localDev --scope=include --collections=users,orders
+npm run backup -- --config=./myconfig.json --preset=users_only
+npm run restore -- --config=./myconfig.json --file=backup_2023-10-28_stagingServer.gz --target=localDev
+npm run restore -- --config=./myconfig.json --backupFile=backup_2023-10-28_stagingServer.gz --target=localDev --drop
 ```
 
-The menu allows you to:
-1.  Create a backup (selecting connection, mode, collections).
-2.  Restore from a backup (selecting backup file, target connection, options like `--drop`).
-3.  Create backup presets.
-4.  Manage (view/delete) existing presets.
+- All CLI arguments go after `--`.
+- Both `--file` and `--backupFile` are supported for restore (because why not?).
+- `--config=...` lets you use any config file you want.
 
-### Non-Interactive Mode
+---
 
-Use command-line arguments with the CLI entry point for automation. *(Note: CLI functionality is currently under development. Detailed argument documentation will be added once finalized.)*
+## 💾 Backup Metadata
 
-```bash
-# Example of running the CLI entry point:
-node dist/apps/cli.js [arguments]
-# or using ts-node:
-# npx ts-node src/apps/cli.ts [arguments]
-```
-
-## 💾 Backup Metadata (`<backup_file_name>.gz.json`)
-
-Each backup archive (e.g., `backup_2023-10-28_stagingServer.gz`) has a corresponding JSON metadata file (e.g., `backup_2023-10-28_stagingServer.gz.json`).
+Every backup archive (e.g., `backup_2023-10-28_stagingServer.gz`) comes with a JSON metadata file (e.g., `backup_2023-10-28_stagingServer.gz.json`). Example:
 
 ```json
 {
-  "source": "stagingServer",               // Name of the source connection
-  "database": "stagingdb",                 // Name of the database backed up
-  "selectionMode": "include",              // Mode used ('all', 'include', 'exclude')
-  "includedCollections": [                 // Populated if selectionMode='include'
-    "users",
-    "products"
-  ],
-  // "excludedCollections": [],             // Populated if selectionMode='exclude' (absent otherwise)
-  "timestamp": 1698480000000,              // Unix timestamp (ms) of backup creation
-  "date": "2023-10-28T08:00:00.000Z",     // ISO 8601 timestamp
-  "archivePath": "backup_2023-10-28_stagingServer.gz", // Relative path of the archive
-  "presetName": "Core Staging Data",       // Optional: Name of the preset used
-  "queryStartTime": "2023-10-27T00:00:00Z"  // Optional: Start time used for query
+  "source": "stagingServer",
+  "database": "stagingdb",
+  "selectionMode": "include",
+  "includedCollections": ["users", "products"],
+  "timestamp": 1698480000000,
+  "date": "2023-10-28T08:00:00.000Z",
+  "archivePath": "backup_2023-10-28_stagingServer.gz",
+  "presetName": "Core Staging Data",
+  "queryStartTime": "2023-10-27T00:00:00Z"
 }
 ```
-This metadata aids the restore process (especially for database name mapping) and documents the backup contents.
 
-## 🏗️ Project Structure
+---
 
-```
-mongo-collection-cherry-picker/
-├── backups/                        # Default backup storage directory
-├── src/
-│   ├── entrypoint/                 # Application entry points (CLI, Interactive)
-│   │   ├── cli.ts
-│   │   ├── interactive.ts
-│   │   └── modes/                  # CLI and interactive mode orchestration
-│   ├── modules/
-│   │   └── backup/
-│   │       ├── domain/             # Business logic (e.g., mongodump command generation)
-│   │       ├── interfaces/         # Strategy interfaces, argument contracts, etc.
-│   │       ├── services/           # Application services and infrastructure services (e.g., ssh-backup-runner)
-│   │       └── strategies/         # Strategy implementations (local, ssh) and strategy selector
-│   │   └── restore/                # Similar structure for restore logic
-│   │   └── prompt/                 # Interactive CLI prompts and preset management logic
-│   ├── infrastructure/             # Infrastructure services (logger, mongodb, config)
-│   ├── controllers/                # Controllers for CLI/interactive mode (scenario orchestration)
-│   ├── types/                      # TypeScript types and interfaces (AppConfig, ConnectionConfig, etc.)
-│   ├── utils/                      # Utilities, formatting, parsing, etc.
-│   ├── zod-schemas/                # Zod schemas for config validation
-├── config.json                     # Main application config
-├── README.md                       # This file
-└── package.json                    # Dependencies and scripts
-```
+## 🧑‍💻 Scripts (from package.json)
+
+- `npm run interactive` — Start interactive mode (recommended for most users)
+- `npm run backup -- ...` — Run a backup via CLI (see above for args)
+- `npm run restore -- ...` — Run a restore via CLI
+- `npm run build` — Compile TypeScript
+- `npm test` — Run all tests
+- `npm run test:e2e` — Run end-to-end tests
+
+> Pro tip: You can always use `npx ts-node` for direct dev runs, or pass `--config=...` to use a custom config file.
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+PRs, issues, and stars are always welcome! If you spot a bug, want a feature, or just want to say hi—open an issue or PR.
+
+---
+
+## 🍒 Why "Cherry Picker"?
+
+Because sometimes you only want the juiciest collections. And who doesn't love a good cherry?
+
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the `LICENSE` file for details (if one exists).
+MIT. Use it, fork it, break it, fix it. Just don't blame us if your database grows wild.
