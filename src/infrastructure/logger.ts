@@ -15,6 +15,11 @@ export class Logger {
     this.prefix = options.prefix ?? '';
   }
 
+  extendPrefix(extendString: string) {
+    this.prefix = `${this.prefix} > ${extendString}`;
+    return this;
+  }
+
   /**
    * Logs an informational message.
    * Stops the spinner temporarily if active.

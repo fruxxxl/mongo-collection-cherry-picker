@@ -15,16 +15,10 @@ import { SshBackupStrategy } from '../strategies/ssh-backup-strategy';
  * Supports both direct database connections and connections via SSH tunnel.
  */
 export class BackupService {
-  private readonly strategySelector: BackupStrategySelector;
-
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
-  ) {
-    const localStrategy = new LocalBackupStrategy(config, logger);
-    const sshStrategy = new SshBackupStrategy(config, logger, new SshBackupRunner(logger));
-    this.strategySelector = new BackupStrategySelector(localStrategy, sshStrategy);
-  }
+  ) {}
 
   /**
    * Executes the mongodump command to create a backup archive (.gz).
@@ -47,7 +41,8 @@ export class BackupService {
     startTime?: Date,
   ): Promise<string> {
     const args = { selectedCollections, excludedCollections, mode, startTime };
-    const strategy = this.strategySelector.select(source);
+
+    const strategy = new BackupStrategySelector(this.config, this.logger).select(source);
     return strategy.createBackup(source, args);
   }
 
