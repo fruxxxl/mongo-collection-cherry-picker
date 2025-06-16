@@ -4,11 +4,7 @@ import * as path from 'path';
 import type { AppConfig, BackupMetadata, ConnectionConfig } from '@ts-types/mixed';
 import { Logger } from '@infrastructure/logger';
 
-import { SshBackupRunner } from './ssh-backup-runner';
-
 import { BackupStrategySelector } from '../strategies/backup-strategy-selector';
-import { LocalBackupStrategy } from '../strategies/local-backup-strategy';
-import { SshBackupStrategy } from '../strategies/ssh-backup-strategy';
 
 /**
  * Handles the execution of mongodump command for creating MongoDB backups.

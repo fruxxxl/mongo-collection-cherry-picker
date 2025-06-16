@@ -38,7 +38,7 @@ export class BackupController {
         excludedCollections: intendedExcluded,
         selectionMode: intendedMode,
         startTime,
-      } = await this.promptService.promptForBackup();
+      } = await this.promptService.askBackupConfig();
       source = promptedSource;
 
       this.logger.startSpinner(`Preparing backup for ${source.name}...`);

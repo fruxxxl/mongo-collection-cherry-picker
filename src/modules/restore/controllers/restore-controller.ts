@@ -98,7 +98,7 @@ export class RestoreController {
     this.logger.startSpinner('Starting interactive restore...');
     try {
       this.logger.stopSpinner();
-      const { backupFile, target, options } = await this.promptService.promptForRestore();
+      const { backupFile, target, options } = await this.promptService.askRestoreConfig();
       this.logger.startSpinner(`Preparing restore for ${backupFile} to ${target.name}...`);
 
       await this.runRestore(backupFile, target.name, options);

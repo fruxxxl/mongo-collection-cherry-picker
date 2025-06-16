@@ -18,7 +18,11 @@ export class PromptService {
     private readonly logger: Logger,
   ) {}
 
-  async askForStartAction(): Promise<'backup' | 'restore' | 'preset_create' | 'preset_manage' | 'exit'> {
+  /**
+   * Prompts the user to select an action.
+   * @returns The selected action.
+   */
+  async askStartAction(): Promise<'backup' | 'restore' | 'preset_create' | 'preset_manage' | 'exit'> {
     const { action } = await inquirer.prompt<{
       action: 'backup' | 'restore' | 'preset_create' | 'preset_manage' | 'exit';
     }>({
@@ -39,7 +43,11 @@ export class PromptService {
     return action;
   }
 
-  async askForContinueAction(): Promise<boolean> {
+  /**
+   * Prompts the user to confirm if they want to perform another action.
+   * @returns True if the user wants to continue, false otherwise.
+   */
+  async askContinueAction(): Promise<boolean> {
     const { continueAction } = await inquirer.prompt({
       type: 'confirm',
       name: 'continueAction',
@@ -54,7 +62,7 @@ export class PromptService {
    * Fetches collection list from the source database if possible.
    * @returns A promise resolving to the user's backup configuration choices.
    */
-  async promptForBackup(): Promise<{
+  async askBackupConfig(): Promise<{
     source: ConnectionConfig;
     selectedCollections: string[];
     excludedCollections: string[];
@@ -128,7 +136,7 @@ export class PromptService {
           ]);
           selectedCollections = chosenCollections;
           if (selectedCollections.length === 1) {
-            startTime = await this.promptForTimeFilter();
+            startTime = await this.askTimeFilter();
           } else if (selectedCollections.length > 1) {
           }
         } else {
@@ -154,7 +162,7 @@ export class PromptService {
    * @param defaultValue - Optional default date to pre-fill the custom input.
    * @returns The selected start time Date object, or undefined if no filter is chosen.
    */
-  private async promptForTimeFilter(defaultValue?: Date): Promise<Date | undefined> {
+  private async askTimeFilter(defaultValue?: Date): Promise<Date | undefined> {
     const { timeFilterChoice } = await inquirer.prompt<{ timeFilterChoice: string }>([
       {
         type: 'list',
@@ -242,7 +250,7 @@ export class PromptService {
    * @returns A promise resolving to the user's restore configuration choices.
    * @throws An error if no backup files are found or metadata cannot be loaded.
    */
-  async promptForRestore(): Promise<{
+  async askRestoreConfig(): Promise<{
     target: ConnectionConfig;
     backupFile: string;
     options: { drop: boolean };
@@ -312,7 +320,13 @@ export class PromptService {
     };
   }
 
-  async promptForRestoreTarget(
+  /**
+   * Prompts the user to select a target connection for restore.
+   * @param backupMetadata - The metadata of the backup file to restore.
+   * @param excludeSource - The source connection to exclude from the list of available connections.
+   * @returns A promise resolving to the user's restore configuration choices.
+   */
+  async askRestoreTarget(
     backupMetadata: BackupMetadata,
     excludeSource?: ConnectionConfig,
   ): Promise<{ target: ConnectionConfig; options: { drop: boolean } }> {
@@ -361,7 +375,11 @@ export class PromptService {
     return { target, options };
   }
 
-  async promptForBackupPreset(): Promise<BackupPreset> {
+  /**
+   * Prompts the user for details needed to create or update a backup preset.
+   * @returns A promise that resolves with the new or updated preset configuration.
+   */
+  async askBackupPresetDetails(): Promise<BackupPreset> {
     const { name, description } = await inquirer.prompt([
       {
         type: 'input',
@@ -479,7 +497,7 @@ export class PromptService {
    * Shows the preset management menu and returns the selected action and preset.
    * Does not change the config, does not delete or save presets.
    */
-  async promptPresetAction(): Promise<
+  async askPresetAction(): Promise<
     | { type: 'backup'; preset: BackupPreset }
     | { type: 'view'; preset: BackupPreset }
     | { type: 'delete'; preset: BackupPreset }
@@ -543,7 +561,7 @@ export class PromptService {
   /**
    * Confirm running preset immediately after creation.
    */
-  async confirmRunPresetNow(): Promise<boolean> {
+  async askRunPresetNow(): Promise<boolean> {
     const { useNow } = await inquirer.prompt({
       type: 'confirm',
       name: 'useNow',
@@ -558,7 +576,7 @@ export class PromptService {
    * @param existingPreset - Optional existing preset data for editing.
    * @returns A promise that resolves with the new or updated preset configuration.
    */
-  async promptForPreset(existingPreset?: BackupPreset): Promise<BackupPreset> {
+  async askPresetDetails(existingPreset?: BackupPreset): Promise<BackupPreset> {
     this.logger.info(existingPreset ? '--- Editing Backup Preset ---' : '--- Creating New Backup Preset ---');
 
     const nameAnswer = await inquirer.prompt<{ name: string }>([
@@ -639,9 +657,7 @@ export class PromptService {
             ]);
 
             if (applyTimeFilterAnswer.apply) {
-              const startTimeDate = await this.promptForTimeFilter(
-                queryStartTime ? parseISO(queryStartTime) : undefined,
-              );
+              const startTimeDate = await this.askTimeFilter(queryStartTime ? parseISO(queryStartTime) : undefined);
               queryStartTime = startTimeDate ? formatISO(startTimeDate) : undefined;
               if (queryStartTime) {
                 this.logger.info(`Time filter set to: >= ${queryStartTime}`);

@@ -3,7 +3,6 @@ import { PromptService } from '../services/prompt-service';
 
 import { Logger } from '@infrastructure/logger';
 import { UpdateableConfig } from '@config/updateable-config';
-import { BackupController } from '@modules/backup/controllers/backup-controller';
 import type { BackupPreset } from '@ts-types/mixed';
 
 /**
@@ -12,7 +11,6 @@ import type { BackupPreset } from '@ts-types/mixed';
 export class PresetController {
   constructor(
     private readonly config: UpdateableConfig,
-    private readonly backupController: BackupController,
     private readonly promptService: PromptService,
     private readonly logger: Logger,
   ) {}
@@ -20,15 +18,17 @@ export class PresetController {
   /**
    * Main flow for managing presets.
    */
-  public async managePresetsFlow(): Promise<void> {
+  public async managePresetsFlow(): Promise<BackupPreset | undefined> {
+    let preset: BackupPreset | undefined;
+
     while (true) {
-      const action = await this.promptService.promptPresetAction();
+      const action = await this.promptService.askPresetAction();
       if (!action) break;
 
       switch (action.type) {
         case 'backup':
-          await this.runPreset(action.preset);
-          break;
+          preset = action.preset;
+          return preset;
         case 'view':
           this.logger.info('--- Preset details ---');
           this.logger.info(JSON.stringify(action.preset, null, 2));
@@ -50,22 +50,23 @@ export class PresetController {
   /**
    * Interactive preset creation and (optionally) running.
    */
-  public async createPresetInteractively(): Promise<void> {
+  public async createPresetInteractively(): Promise<BackupPreset | undefined> {
+    let preset: BackupPreset | undefined;
+
     try {
-      const newPreset = await this.promptService.promptForPreset();
-      if (this.isPresetNameDuplicate(newPreset.name)) {
-        this.logger.warn(`Preset with name "${newPreset.name}" already exists.`);
+      preset = await this.promptService.askPresetDetails();
+      if (this.isPresetNameDuplicate(preset.name)) {
+        this.logger.warn(`Preset with name "${preset.name}" already exists.`);
         return;
       }
-      this.addPreset(newPreset);
+      this.addPreset(preset);
       await this.saveConfig();
-      this.logger.succeedSpinner(`Preset "${newPreset.name}" created!`);
-      if (await this.promptService.confirmRunPresetNow()) {
-        await this.runPreset(newPreset);
-      }
+      this.logger.succeedSpinner(`Preset "${preset.name}" created!`);
     } catch (error: any) {
       this.logger.failSpinner(`Error creating preset: ${error.message}`);
     }
+
+    return preset;
   }
 
   // --- Private methods ---
@@ -84,10 +85,6 @@ export class PresetController {
 
   private async saveConfig(): Promise<void> {
     this.config.update(this.config.parsed);
-  }
-
-  private async runPreset(preset: BackupPreset): Promise<void> {
-    await this.backupController.useBackupPreset(preset);
   }
 
   private async confirmDeletePreset(preset: BackupPreset): Promise<boolean> {

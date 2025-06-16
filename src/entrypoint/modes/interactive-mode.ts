@@ -54,7 +54,6 @@ export class InteractiveMode {
 
     this.presetController = new PresetController(
       updateableConfig,
-      this.backupController,
       this.promptService,
       new Logger({ prefix: PresetController.name }),
     );
@@ -64,15 +63,25 @@ export class InteractiveMode {
     const actions: Record<string, () => Promise<void>> = {
       backup: () => this.backupController.backupDatabase(),
       restore: () => this.restoreController.restoreDatabase(),
-      preset_create: () => this.presetController.createPresetInteractively(),
-      preset_manage: () => this.presetController.managePresetsFlow(),
+      preset_create: async () => {
+        const preset = await this.presetController.createPresetInteractively();
+        if (preset && (await this.promptService.askRunPresetNow())) {
+          await this.backupController.useBackupPreset(preset);
+        }
+      },
+      preset_manage: async () => {
+        const preset = await this.presetController.managePresetsFlow();
+        if (preset && (await this.promptService.askRunPresetNow())) {
+          await this.backupController.useBackupPreset(preset);
+        }
+      },
     };
 
     let exit = false;
 
     while (!exit) {
       try {
-        const action = await this.promptService.askForStartAction();
+        const action = await this.promptService.askStartAction();
 
         if (action === 'exit') {
           exit = true;
@@ -87,7 +96,7 @@ export class InteractiveMode {
         }
 
         if (!exit) {
-          const continueAction = await this.promptService.askForContinueAction();
+          const continueAction = await this.promptService.askContinueAction();
           if (!continueAction) exit = true;
         }
       } catch (error: any) {
