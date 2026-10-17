@@ -1,8 +1,14 @@
-[![E2E Tests](https://github.com/fruxxxl/mongo-collection-cherry-picker/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/fruxxxl/mongo-collection-cherry-picker/actions/workflows/e2e.yml)
+[![E2E Tests](https://github.com/fruxxxl/mongo-collection-cherry-picker/actions/workflows/e2e.yml/badge.svg?branch=master)](https://github.com/fruxxxl/mongo-collection-cherry-picker/actions/workflows/e2e.yml)
 
 # MongoDB Collection Cherry Picker 🍒
 
-A powerful, interactive CLI tool for MongoDB backups and restores—with fine-grained collection selection, SSH support, and a sprinkle of fun.
+A CLI for developers who need selected MongoDB collections for a backup or another environment. Choose the collections interactively or reuse a preset in a script.
+
+Backups can run through a direct connection or over SSH. Restore uses a direct MongoDB connection; SSH restore is not implemented. See the [backup strategies](src/modules/backup/strategies/) and [restore service](src/modules/restore/services/restore.service.ts).
+
+**По-русски:** выборочный backup коллекций MongoDB и восстановление в другое окружение. Можно сохранить набор коллекций в пресете, чтобы повторять перенос. SSH поддерживается для backup; для восстановления нужно прямое подключение.
+
+Built by [Alexander Shulgin](https://procesa.ru/about/), developer at PROCESA. [Business automation and custom tools](https://procesa.ru/).
 
 ---
 
@@ -31,9 +37,9 @@ npm run restore -- --config=./myconfig.json --file=backup_2023-10-28_stagingServ
 ## ✨ Features
 
 - **Selective Backups:** All, include, or exclude specific collections.
-- **Flexible Restores:** Restore to any connection, drop collections if you dare.
-- **Multiple Connections:** Local, remote, SSH—bring your own MongoDB.
-- **SSH Tunnel Support:** Back up remote DBs like a pro.
+- **Direct Restores:** Restore through a direct MongoDB connection. The `--drop` option deletes matching target collections before restoring.
+- **Multiple Connections:** Configure local or remote MongoDB connections; SSH execution is supported for backups.
+- **SSH Backup:** Run `mongodump` on the remote host and stream the archive to a local file.
 - **Interactive Mode:** User-friendly prompts, zero guesswork.
 - **CLI Mode:** Scriptable, automatable, CI/CD-friendly.
 - **Presets:** Save and reuse your favorite backup configs.
