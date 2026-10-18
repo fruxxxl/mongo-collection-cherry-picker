@@ -8,8 +8,6 @@ Backups can run through a direct connection or over SSH. Restore uses a direct M
 
 **По-русски:** выборочный backup коллекций MongoDB и восстановление в другое окружение. Можно сохранить набор коллекций в пресете, чтобы повторять перенос. SSH поддерживается для backup; для восстановления нужно прямое подключение.
 
-Built by [Alexander Shulgin](https://procesa.ru/about/), developer at PROCESA. [Business automation and custom tools](https://procesa.ru/).
-
 ---
 
 ## ⚡️ Quickstart
